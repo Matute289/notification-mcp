@@ -98,7 +98,7 @@ class NotificationView(BaseModel):
 class SubmitResponse(BaseModel):
     notification_id: UUID
     status: NotificationStatus
-    duplicate: bool
+    duplicate: bool = False  # some server versions omit this field on non-duplicates
 
 
 class TemplateView(BaseModel):
