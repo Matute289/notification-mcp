@@ -1,15 +1,40 @@
 """FastMCP instance with all 6 tools registered."""
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from typing import Any
 
+import structlog
 from fastmcp import Context, FastMCP
 
 from .tools.notifications import get_notification, submit_notification
 from .tools.templates import create_template, get_template
 from .tools.users import register_device, update_user_setting
 
-mcp = FastMCP("NotificationEngineMCPServer")
+log = structlog.get_logger(__name__)
+
+
+@asynccontextmanager
+async def _lifespan(server: FastMCP):
+    from . import db
+    from .config import get_settings
+    from .logging_setup import setup_logging
+    from .services import service_api_client
+
+    settings = get_settings()
+    setup_logging(settings)
+    log.info("startup", transport=settings.mcp_transport, host=settings.mcp_host, port=settings.mcp_port)
+    await db.connect(settings)
+    await service_api_client.init(settings)
+    try:
+        yield
+    finally:
+        await service_api_client.close()
+        await db.disconnect()
+        log.info("shutdown")
+
+
+mcp = FastMCP("NotificationEngineMCPServer", lifespan=_lifespan)
 
 
 @mcp.tool

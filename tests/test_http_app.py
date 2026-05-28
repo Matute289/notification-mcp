@@ -78,8 +78,37 @@ def mock_service_client(monkeypatch):
 
 @pytest.fixture
 async def test_client(patched_env, mock_db, mock_service_client):
-    from mcp_server.app import create_app
-    app = create_app()
+    """Minimal ASGI app: just the auth + logging middlewares + /health route.
+
+    We don't start the full FastMCP lifespan in unit tests (it requires
+    an anyio task group). Instead we test the middleware layer directly
+    with a simple 200-OK backend for authenticated requests.
+    """
+    from starlette.applications import Starlette
+    from starlette.middleware import Middleware
+    from starlette.requests import Request
+    from starlette.responses import JSONResponse
+    from starlette.routing import Route
+
+    from mcp_server.middleware.auth_middleware import AuthMiddleware
+    from mcp_server.middleware.logging_middleware import LoggingMiddleware
+
+    async def ok_handler(request: Request):
+        return JSONResponse({"ok": True})
+
+    async def health_handler(request: Request):
+        return JSONResponse({"status": "ok"})
+
+    app = Starlette(
+        routes=[
+            Route("/health", health_handler, methods=["GET"]),
+            Route("/mcp", ok_handler, methods=["POST", "GET", "DELETE"]),
+        ],
+        middleware=[
+            Middleware(AuthMiddleware),
+            Middleware(LoggingMiddleware),
+        ],
+    )
     async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         yield client
 
