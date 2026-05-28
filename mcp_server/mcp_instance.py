@@ -1,11 +1,10 @@
 """FastMCP instance with all 6 tools registered."""
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
 from typing import Any
 
 import structlog
-from fastmcp import Context, FastMCP
+from mcp.server.fastmcp import FastMCP, Context
 
 from .tools.notifications import get_notification, submit_notification
 from .tools.templates import create_template, get_template
@@ -13,31 +12,10 @@ from .tools.users import register_device, update_user_setting
 
 log = structlog.get_logger(__name__)
 
-
-@asynccontextmanager
-async def _lifespan(server: FastMCP):
-    from . import db
-    from .config import get_settings
-    from .logging_setup import setup_logging
-    from .services import service_api_client
-
-    settings = get_settings()
-    setup_logging(settings)
-    log.info("startup", transport=settings.mcp_transport, host=settings.mcp_host, port=settings.mcp_port)
-    await db.connect(settings)
-    await service_api_client.init(settings)
-    try:
-        yield
-    finally:
-        await service_api_client.close()
-        await db.disconnect()
-        log.info("shutdown")
+mcp = FastMCP("NotificationEngineMCPServer")
 
 
-mcp = FastMCP("NotificationEngineMCPServer", lifespan=_lifespan)
-
-
-@mcp.tool
+@mcp.tool()
 async def submit_notification_tool(
     event_id: str,
     channel: str,
@@ -82,7 +60,7 @@ async def submit_notification_tool(
     return result
 
 
-@mcp.tool
+@mcp.tool()
 async def get_notification_tool(notification_id: str, ctx: Context) -> dict[str, Any]:
     """Get the current status and details of a notification by its UUID.
 
@@ -95,7 +73,7 @@ async def get_notification_tool(notification_id: str, ctx: Context) -> dict[str,
     return result
 
 
-@mcp.tool
+@mcp.tool()
 async def create_template_tool(
     name: str,
     channel: str,
@@ -127,7 +105,7 @@ async def create_template_tool(
     return result
 
 
-@mcp.tool
+@mcp.tool()
 async def get_template_tool(template_id: str, ctx: Context) -> dict[str, Any]:
     """Retrieve a notification template by its UUID. Results are cached in-process.
 
@@ -140,7 +118,7 @@ async def get_template_tool(template_id: str, ctx: Context) -> dict[str, Any]:
     return result
 
 
-@mcp.tool
+@mcp.tool()
 async def register_device_tool(device_token: str, channel: str, ctx: Context) -> dict[str, Any]:
     """Register or refresh a push notification device token for the authenticated user.
 
@@ -154,7 +132,7 @@ async def register_device_tool(device_token: str, channel: str, ctx: Context) ->
     return result
 
 
-@mcp.tool
+@mcp.tool()
 async def update_user_setting_tool(channel: str, opt_in: bool, ctx: Context) -> dict[str, Any]:
     """Update the authenticated user's notification opt-in/opt-out preference.
 

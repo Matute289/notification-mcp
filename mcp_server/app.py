@@ -1,39 +1,74 @@
-"""ASGI app — FastMCP's http_app as the root with our middleware and /health route.
+"""ASGI app — official MCP SDK integration with custom middleware and /health route.
 
-FastMCP's streamable-http transport uses anyio task groups initialized in its
-own lifespan. It must be the ASGI root — mounting it inside FastAPI breaks that
-lifespan. Instead we use create_streamable_http_app() directly, passing our
-middleware and a /health route as Starlette primitives.
+The official SDK's streamable_http_app() returns a Starlette app with /mcp
+defined internally. We mount it inside a parent Starlette app that:
+  - Owns the process lifespan (DB pool, service client, session_manager.run())
+  - Applies our pure-ASGI middleware (auth, logging)
+  - Exposes /health without authentication
+
+Key constraint: session_manager.run() must be called exactly once, from the
+outermost lifespan. Mounting mcp_starlette as a sub-app suppresses its inner
+lifespan, so we call mcp.session_manager.run() ourselves here.
 """
 from __future__ import annotations
 
+import contextlib
+
+import structlog
+from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
-from starlette.routing import Route
+from starlette.routing import Mount, Route
 
+from . import db
+from .config import get_settings
+from .logging_setup import setup_logging
 from .middleware.auth_middleware import AuthMiddleware
 from .middleware.logging_middleware import LoggingMiddleware
+from .services import service_api_client
+
+log = structlog.get_logger(__name__)
 
 
 async def _health(request: Request) -> Response:
     return JSONResponse({"status": "ok"})
 
 
-def create_app():
+def create_app() -> Starlette:
     from .mcp_instance import mcp
-    from fastmcp.server.http import create_streamable_http_app
 
-    return create_streamable_http_app(
-        server=mcp,
-        streamable_http_path="/mcp",
+    # streamable_http_app() must be called before mcp.session_manager is accessed
+    mcp_starlette = mcp.streamable_http_app()
+
+    @contextlib.asynccontextmanager
+    async def lifespan(app: Starlette):
+        settings = get_settings()
+        setup_logging(settings)
+        log.info("startup", transport=settings.mcp_transport,
+                 host=settings.mcp_host, port=settings.mcp_port)
+        await db.connect(settings)
+        await service_api_client.init(settings)
+        async with mcp.session_manager.run():
+            yield
+        await service_api_client.close()
+        await db.disconnect()
+        log.info("shutdown")
+
+    return Starlette(
+        routes=[
+            Route("/health", _health, methods=["GET"]),
+            # mcp_starlette has /mcp defined internally; Mount("/") preserves
+            # the full path so /mcp reaches it correctly (Mount("/mcp") would
+            # cause Starlette to strip the prefix and the sub-app would look
+            # for /mcp within itself → 404).
+            Mount("/", app=mcp_starlette),
+        ],
         middleware=[
             Middleware(AuthMiddleware),
             Middleware(LoggingMiddleware),
         ],
-        routes=[
-            Route("/health", _health, methods=["GET"]),
-        ],
+        lifespan=lifespan,
     )
 
 
