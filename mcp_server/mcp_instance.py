@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastmcp import FastMCP
+from fastmcp import Context, FastMCP
 
 from .tools.notifications import get_notification, submit_notification
 from .tools.templates import create_template, get_template
@@ -16,6 +16,7 @@ mcp = FastMCP("NotificationEngineMCPServer")
 async def submit_notification_tool(
     event_id: str,
     channel: str,
+    ctx: Context,
     recipient_email: str | None = None,
     recipient_phone_number: str | None = None,
     recipient_device_token: str | None = None,
@@ -39,7 +40,9 @@ async def submit_notification_tool(
     subject: message subject (overrides template subject).
     body: message body (use instead of template_id, or to override template body).
     """
-    return await submit_notification(
+    await ctx.report_progress(0, 3, "Validating request")
+    await ctx.info(f"Submitting {channel} notification (event_id={event_id})")
+    result = await submit_notification(
         event_id=event_id, channel=channel,
         recipient_email=recipient_email,
         recipient_phone_number=recipient_phone_number,
@@ -47,15 +50,24 @@ async def submit_notification_tool(
         template_id=template_id, variables=variables,
         subject=subject, body=body,
     )
+    await ctx.report_progress(3, 3, "Done")
+    status = result.get("status", "unknown")
+    duplicate = result.get("duplicate", False)
+    await ctx.info(f"Notification accepted — status={status}" + (" (duplicate)" if duplicate else ""))
+    return result
 
 
 @mcp.tool
-async def get_notification_tool(notification_id: str) -> dict[str, Any]:
+async def get_notification_tool(notification_id: str, ctx: Context) -> dict[str, Any]:
     """Get the current status and details of a notification by its UUID.
 
     notification_id: UUID returned when the notification was submitted.
     """
-    return await get_notification(notification_id=notification_id)
+    await ctx.report_progress(0, 2, "Fetching notification")
+    result = await get_notification(notification_id=notification_id)
+    await ctx.report_progress(2, 2, "Done")
+    await ctx.info(f"Notification status: {result.get('status', 'unknown')}")
+    return result
 
 
 @mcp.tool
@@ -63,6 +75,7 @@ async def create_template_tool(
     name: str,
     channel: str,
     body: str,
+    ctx: Context,
     locale: str = "en",
     subject: str | None = None,
     media_urls: list[str] | None = None,
@@ -78,36 +91,54 @@ async def create_template_tool(
     media_urls: media attachment URLs (MMS / rich push), max 10.
     version: template version number (default: 1).
     """
-    return await create_template(
+    await ctx.report_progress(0, 3, "Validating template")
+    await ctx.info(f"Creating template '{name}' for channel={channel}")
+    result = await create_template(
         name=name, channel=channel, body=body, locale=locale,
         subject=subject, media_urls=media_urls, version=version,
     )
+    await ctx.report_progress(3, 3, "Done")
+    await ctx.info(f"Template created — id={result.get('id')}")
+    return result
 
 
 @mcp.tool
-async def get_template_tool(template_id: str) -> dict[str, Any]:
+async def get_template_tool(template_id: str, ctx: Context) -> dict[str, Any]:
     """Retrieve a notification template by its UUID. Results are cached in-process.
 
     template_id: UUID of the template.
     """
-    return await get_template(template_id=template_id)
+    await ctx.report_progress(0, 2, "Looking up template")
+    result = await get_template(template_id=template_id)
+    await ctx.report_progress(2, 2, "Done")
+    await ctx.info(f"Template '{result.get('name')}' (channel={result.get('channel')})")
+    return result
 
 
 @mcp.tool
-async def register_device_tool(device_token: str, channel: str) -> dict[str, Any]:
+async def register_device_tool(device_token: str, channel: str, ctx: Context) -> dict[str, Any]:
     """Register or refresh a push notification device token for the authenticated user.
 
     device_token: APNs or FCM device token provided by the mobile OS (max 512 chars).
     channel: push_ios (APNs) | push_android (FCM).
     """
-    return await register_device(device_token=device_token, channel=channel)
+    await ctx.report_progress(0, 2, "Registering device")
+    await ctx.info(f"Registering device for channel={channel}")
+    result = await register_device(device_token=device_token, channel=channel)
+    await ctx.report_progress(2, 2, "Done")
+    return result
 
 
 @mcp.tool
-async def update_user_setting_tool(channel: str, opt_in: bool) -> dict[str, Any]:
+async def update_user_setting_tool(channel: str, opt_in: bool, ctx: Context) -> dict[str, Any]:
     """Update the authenticated user's notification opt-in/opt-out preference.
 
     channel: email | sms | push_ios | push_android.
     opt_in: true to enable notifications on this channel, false to opt out.
     """
-    return await update_user_setting(channel=channel, opt_in=opt_in)
+    await ctx.report_progress(0, 2, "Updating preference")
+    action = "opted in to" if opt_in else "opted out of"
+    await ctx.info(f"User {action} {channel} notifications")
+    result = await update_user_setting(channel=channel, opt_in=opt_in)
+    await ctx.report_progress(2, 2, "Done")
+    return result
