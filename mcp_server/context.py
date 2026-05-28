@@ -11,6 +11,12 @@ current_user_id: contextvars.ContextVar[int | None] = contextvars.ContextVar(
 
 def get_current_user_id_or_raise() -> int:
     uid = current_user_id.get()
-    if uid is None:
-        raise UnauthenticatedError(401, "unauthenticated", "no authenticated user in context")
-    return uid
+    if uid is not None:
+        return uid
+    # Fallback for stdio transport (mcp dev / Claude Desktop):
+    # no auth middleware runs, so we read from env var set by the operator.
+    import os
+    stdio_uid = os.environ.get("MCP_STDIO_USER_ID")
+    if stdio_uid:
+        return int(stdio_uid)
+    raise UnauthenticatedError(401, "unauthenticated", "no authenticated user in context")
