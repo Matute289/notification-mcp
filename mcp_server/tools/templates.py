@@ -1,0 +1,97 @@
+from __future__ import annotations
+
+import time
+from typing import Any
+from uuid import UUID
+
+import structlog
+
+from ..config import get_settings
+from ..context import get_current_user_id_or_raise
+from ..models import CreateTemplateInput, GetTemplateInput, TemplateView
+from ..services import service_api_client
+
+log = structlog.get_logger(__name__)
+
+_template_cache: dict[str, tuple[float, dict[str, Any]]] = {}
+
+
+def _cache_get(template_id: str, ttl_s: int) -> dict[str, Any] | None:
+    import time as _time
+    if ttl_s <= 0:
+        return None
+    entry = _template_cache.get(template_id)
+    if entry and (_time.monotonic() - entry[0]) < ttl_s:
+        return entry[1]
+    return None
+
+
+def _cache_set(template_id: str, data: dict[str, Any]) -> None:
+    import time as _time
+    _template_cache[template_id] = (_time.monotonic(), data)
+
+
+def _log_tool_call(tool_name: str, user_id: int, start: float, *, success: bool, error_type: str | None = None) -> None:
+    duration_ms = round((time.perf_counter() - start) * 1000, 1)
+    log.info("tool_call", tool_name=tool_name, user_id=user_id, duration_ms=duration_ms, success=success, error_type=error_type)
+
+
+async def create_template(
+    name: str,
+    channel: str,
+    body: str,
+    locale: str = "en",
+    subject: str | None = None,
+    media_urls: list[str] | None = None,
+    version: int = 1,
+) -> dict[str, Any]:
+    settings = get_settings()
+    user_id = get_current_user_id_or_raise()
+    start = time.perf_counter()
+    tool_name = "create_template"
+    try:
+        inp = CreateTemplateInput(
+            name=name, channel=channel, locale=locale,  # type: ignore[arg-type]
+            subject=subject, body=body, media_urls=media_urls, version=version,
+        )
+        payload: dict[str, Any] = {
+            "name": inp.name, "channel": inp.channel, "locale": inp.locale,
+            "body": inp.body, "version": inp.version,
+        }
+        if inp.subject:
+            payload["subject"] = inp.subject
+        if inp.media_urls:
+            payload["media_urls"] = inp.media_urls
+
+        result = await service_api_client.request(
+            settings, "POST", "/v1/templates",
+            on_behalf_of_user_id=user_id, json_body=payload,
+        )
+        response = TemplateView(**result).model_dump()
+        _log_tool_call(tool_name, user_id, start, success=True)
+        return response
+    except Exception as exc:
+        _log_tool_call(tool_name, user_id, start, success=False, error_type=type(exc).__name__)
+        raise
+
+
+async def get_template(template_id: str) -> dict[str, Any]:
+    settings = get_settings()
+    user_id = get_current_user_id_or_raise()
+    start = time.perf_counter()
+    tool_name = "get_template"
+    try:
+        inp = GetTemplateInput(template_id=UUID(template_id))
+        tid = str(inp.template_id)
+        cached = _cache_get(tid, settings.template_cache_ttl_s)
+        if cached is not None:
+            _log_tool_call(tool_name, user_id, start, success=True)
+            return cached
+        result = await service_api_client.request(settings, "GET", f"/v1/templates/{tid}")
+        view = TemplateView(**result).model_dump()
+        _cache_set(tid, view)
+        _log_tool_call(tool_name, user_id, start, success=True)
+        return view
+    except Exception as exc:
+        _log_tool_call(tool_name, user_id, start, success=False, error_type=type(exc).__name__)
+        raise

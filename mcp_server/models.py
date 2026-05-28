@@ -6,90 +6,72 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-
 _STRICT = ConfigDict(extra="forbid", str_strip_whitespace=True)
-
-
-# ---------------------------------------------------------------------------
-# Shared primitives
-# ---------------------------------------------------------------------------
 
 Channel = Literal["email", "sms", "push_ios", "push_android"]
 PushChannel = Literal["push_ios", "push_android"]
-
 NotificationStatus = Literal[
     "received", "enqueued", "in_flight", "sent", "retrying", "dead_letter", "failed"
 ]
 
 
 # ---------------------------------------------------------------------------
-# Tool inputs
+# Tool inputs — user_id removed from user-scoped tools (comes from contextvar)
 # ---------------------------------------------------------------------------
 
 class RecipientInput(BaseModel):
     model_config = _STRICT
-
-    user_id: int | None = None
-    email: str | None = None
-    phone_number: str | None = None
-    device_token: str | None = None
+    email: str | None = Field(None, max_length=320)
+    phone_number: str | None = Field(None, max_length=20)
+    device_token: str | None = Field(None, max_length=512)
 
 
 class SubmitNotificationInput(BaseModel):
     model_config = _STRICT
-
     event_id: Annotated[str, Field(min_length=1, max_length=256)]
     channel: Channel
     recipient: RecipientInput
     template_id: UUID | None = None
-    variables: dict[str, str] | None = None
-    subject: str | None = None
-    body: str | None = None
+    variables: Annotated[dict[str, str], Field(max_length=50)] | None = None
+    subject: str | None = Field(None, max_length=998)
+    body: str | None = Field(None, max_length=160_000)
 
 
 class GetNotificationInput(BaseModel):
     model_config = _STRICT
-
     notification_id: UUID
 
 
 class CreateTemplateInput(BaseModel):
     model_config = _STRICT
-
-    user_id: Annotated[int, Field(gt=0)]
-    name: Annotated[str, Field(min_length=1)]
+    name: Annotated[str, Field(min_length=1, max_length=128)]
     channel: Channel
-    locale: str = "en"
-    subject: str | None = None
-    body: Annotated[str, Field(min_length=1)]
-    media_urls: list[str] | None = None
-    version: int = 1
+    locale: Annotated[str, Field(min_length=2, max_length=10)] = "en"
+    subject: str | None = Field(None, max_length=998)
+    body: Annotated[str, Field(min_length=1, max_length=160_000)]
+    media_urls: Annotated[list[str], Field(max_length=10)] | None = None
+    version: Annotated[int, Field(ge=1, le=9999)] = 1
 
 
 class GetTemplateInput(BaseModel):
     model_config = _STRICT
-
     template_id: UUID
 
 
 class RegisterDeviceInput(BaseModel):
     model_config = _STRICT
-
-    user_id: Annotated[int, Field(gt=0)]
-    device_token: Annotated[str, Field(min_length=1)]
+    device_token: Annotated[str, Field(min_length=1, max_length=512)]
     channel: PushChannel
 
 
 class UpdateUserSettingInput(BaseModel):
     model_config = _STRICT
-
-    user_id: Annotated[int, Field(gt=0)]
     channel: Channel
     opt_in: bool
 
 
 # ---------------------------------------------------------------------------
-# API response shapes (for documentation / type-safety in tools)
+# API response shapes
 # ---------------------------------------------------------------------------
 
 class RecipientView(BaseModel):

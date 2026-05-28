@@ -17,7 +17,7 @@ from unittest.mock import patch
 
 import pytest
 
-from notification_mcp.hmac_auth import _sign, build_auth_headers
+from mcp_server.hmac_auth import _sign, build_auth_headers
 
 
 # Fixed test vectors (recompute to verify cross-language parity)
@@ -59,7 +59,7 @@ def test_sign_differs_without_obo_vs_with():
 
 
 def test_build_auth_headers_no_obo():
-    with patch("notification_mcp.hmac_auth.time") as mock_time:
+    with patch("mcp_server.hmac_auth.time") as mock_time:
         mock_time.time.return_value = 1700000000.0
         headers = build_auth_headers("mykey", "testsecret", "POST", "/v1/notifications", b"")
 
@@ -71,7 +71,7 @@ def test_build_auth_headers_no_obo():
 
 
 def test_build_auth_headers_with_obo():
-    with patch("notification_mcp.hmac_auth.time") as mock_time:
+    with patch("mcp_server.hmac_auth.time") as mock_time:
         mock_time.time.return_value = 1700000000.0
         headers = build_auth_headers("mykey", "testsecret", "POST", "/v1/notifications", b"", on_behalf_of_user_id=42)
 

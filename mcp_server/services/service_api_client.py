@@ -1,26 +1,32 @@
-"""Singleton async HTTP client with HMAC signing and connection pooling."""
+"""Singleton async HTTP client for NotificationEngine with HMAC signing.
+
+A single AsyncClient instance is shared across all requests. This is safe
+in async code: httpx manages per-request state internally and the connection
+pool is correctly isolated between concurrent coroutines.
+"""
 from __future__ import annotations
 
 import json
-import logging
 from typing import Any
 
 import httpx
+import structlog
 
-from .config import Settings
-from .errors import raise_for_response
-from .hmac_auth import build_auth_headers
+from ..config import Settings
+from ..errors import raise_for_response
+from ..hmac_auth import build_auth_headers
 
-logger = logging.getLogger(__name__)
+log = structlog.get_logger(__name__)
 
-_MAX_RESPONSE_BYTES = 1 * 1024 * 1024  # 1 MB guard against unexpectedly large bodies
+_MAX_RESPONSE_BYTES = 1 * 1024 * 1024  # 1 MB guard
 
 _client: httpx.AsyncClient | None = None
 
 
-def _make_client(settings: Settings) -> httpx.AsyncClient:
-    return httpx.AsyncClient(
-        base_url=settings.notification_engine_base_url,
+async def init(settings: Settings) -> None:
+    global _client
+    _client = httpx.AsyncClient(
+        base_url=settings.service_api_url,
         timeout=httpx.Timeout(settings.http_timeout_s),
         limits=httpx.Limits(
             max_connections=settings.http_max_connections,
@@ -31,12 +37,7 @@ def _make_client(settings: Settings) -> httpx.AsyncClient:
     )
 
 
-def init_client(settings: Settings) -> None:
-    global _client
-    _client = _make_client(settings)
-
-
-async def close_client() -> None:
+async def close() -> None:
     global _client
     if _client is not None:
         await _client.aclose()
@@ -45,7 +46,7 @@ async def close_client() -> None:
 
 def _get_client() -> httpx.AsyncClient:
     if _client is None:
-        raise RuntimeError("HTTP client is not initialized. Call init_client() first.")
+        raise RuntimeError("Service API client not initialized. Call service_api_client.init() first.")
     return _client
 
 
@@ -57,18 +58,17 @@ async def request(
     on_behalf_of_user_id: int | None = None,
     json_body: Any = None,
 ) -> Any:
-    """Sign and execute an HTTP request against NotificationEngine.
+    """Sign and execute a request to the Service API (NotificationEngine).
 
-    Returns the parsed JSON body on success (2xx).
-    Raises a NotificationEngineError subclass on 4xx/5xx.
+    Returns parsed JSON on 2xx. Raises NotificationEngineError subclass on 4xx/5xx.
     """
     raw_body = b""
     if json_body is not None:
         raw_body = json.dumps(json_body, separators=(",", ":")).encode()
 
     auth_headers = build_auth_headers(
-        app_key=settings.notification_engine_app_key,
-        app_secret=settings.notification_engine_app_secret,
+        app_key=settings.service_api_key,
+        app_secret=settings.service_api_secret,
         method=method,
         path=path,
         body=raw_body,
@@ -76,29 +76,19 @@ async def request(
     )
 
     headers = {**auth_headers, "Content-Type": "application/json"}
-
-    client = _get_client()
-    response = await client.request(
-        method,
-        path,
-        content=raw_body if raw_body else None,
-        headers=headers,
+    response = await _get_client().request(
+        method, path, content=raw_body if raw_body else None, headers=headers
     )
 
-    # Guard against huge response bodies
     content = response.content
     if len(content) > _MAX_RESPONSE_BYTES:
         raise RuntimeError(f"Response body too large: {len(content)} bytes from {method} {path}")
 
     if response.status_code in (200, 201, 202):
-        if content:
-            return response.json()
-        return None
-
+        return response.json() if content else None
     if response.status_code == 204:
         return None
 
-    # Error path
     try:
         error_body: dict[str, Any] = response.json()
     except Exception:

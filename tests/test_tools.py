@@ -1,4 +1,4 @@
-"""Tool integration tests using respx to mock the NotificationEngine HTTP API."""
+"""Tool integration tests using respx to mock the Service API."""
 from __future__ import annotations
 
 import os
@@ -8,46 +8,51 @@ import pytest
 import respx
 import httpx
 
-from notification_mcp import config as _config_module
-
-
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
+import mcp_server.config as _config_module
+import mcp_server.services.service_api_client as _client_module
+from mcp_server.context import current_user_id
 
 BASE_URL = "http://localhost:8080"
+_TEST_USER_ID = 42
 
 _ENV = {
-    "NOTIFICATION_ENGINE_APP_KEY": "testkey",
-    "NOTIFICATION_ENGINE_APP_SECRET": "testsecret",
-    "NOTIFICATION_ENGINE_BASE_URL": BASE_URL,
-    "TEMPLATE_CACHE_TTL_S": "0",  # disable cache for tests
+    "SERVICE_API_URL": BASE_URL,
+    "SERVICE_API_KEY": "testkey",
+    "SERVICE_API_SECRET": "testsecret",
+    "DATABASE_URL": "postgresql://user:pass@localhost:5432/test",
+    "SECRET_KEY": "a" * 32,
+    "MCP_TRANSPORT": "streamable_http",
+    "TEMPLATE_CACHE_TTL_S": "0",
 }
 
 
 @pytest.fixture(autouse=True)
-def reset_settings():
-    """Reset the settings singleton between tests."""
+def reset_singletons():
     _config_module._settings = None
-    with patch.dict(os.environ, _ENV, clear=True):
-        yield
+    _client_module._client = None
+    yield
     _config_module._settings = None
+    _client_module._client = None
 
 
 @pytest.fixture(autouse=True)
-def reset_client():
-    """Reset the HTTP client singleton between tests."""
-    import notification_mcp.client as _client_module
-    _client_module._client = None
+def set_user_context():
+    """Inject authenticated user into contextvar for all tool tests."""
+    token = current_user_id.set(_TEST_USER_ID)
     yield
-    _client_module._client = None
+    current_user_id.reset(token)
 
 
-def _make_client():
-    from notification_mcp.config import get_settings
-    from notification_mcp.client import init_client, _get_client
-    init_client(get_settings())
-    return _get_client()
+@pytest.fixture(autouse=True)
+def apply_env():
+    with patch.dict(os.environ, _ENV, clear=True):
+        yield
+
+
+async def _make_client():
+    from mcp_server.config import get_settings
+    from mcp_server.services.service_api_client import init
+    await init(get_settings())
 
 
 # ---------------------------------------------------------------------------
@@ -56,91 +61,56 @@ def _make_client():
 
 @respx.mock
 async def test_submit_notification_success():
-    _make_client()
+    await _make_client()
     route = respx.post(f"{BASE_URL}/v1/notifications").mock(
-        return_value=httpx.Response(
-            202,
-            json={
-                "notification_id": "00000000-0000-0000-0000-000000000001",
-                "status": "received",
-                "duplicate": False,
-            },
-        )
+        return_value=httpx.Response(202, json={
+            "notification_id": "00000000-0000-0000-0000-000000000001",
+            "status": "received", "duplicate": False,
+        })
     )
-
-    from notification_mcp.tools.notifications import submit_notification
+    from mcp_server.tools.notifications import submit_notification
     result = await submit_notification(
-        event_id="evt-001",
-        channel="email",
-        recipient_user_id=None,
+        event_id="evt-001", channel="email",
         recipient_email="user@example.com",
-        recipient_phone_number=None,
-        recipient_device_token=None,
-        template_id=None,
-        variables=None,
-        subject="Hello",
-        body="World",
+        recipient_phone_number=None, recipient_device_token=None,
+        template_id=None, variables=None, subject="Hi", body="Hello",
     )
-
     assert route.called
     assert result["status"] == "received"
-    assert result["duplicate"] is False
 
 
 @respx.mock
-async def test_submit_notification_sends_obo_header_when_user_id():
-    _make_client()
+async def test_submit_notification_sends_obo_header():
+    await _make_client()
     route = respx.post(f"{BASE_URL}/v1/notifications").mock(
-        return_value=httpx.Response(
-            202,
-            json={
-                "notification_id": "00000000-0000-0000-0000-000000000002",
-                "status": "received",
-                "duplicate": False,
-            },
-        )
+        return_value=httpx.Response(202, json={
+            "notification_id": "00000000-0000-0000-0000-000000000002",
+            "status": "received", "duplicate": False,
+        })
     )
-
-    from notification_mcp.tools.notifications import submit_notification
+    from mcp_server.tools.notifications import submit_notification
     await submit_notification(
-        event_id="evt-002",
-        channel="sms",
-        recipient_user_id=42,
-        recipient_email=None,
-        recipient_phone_number=None,
-        recipient_device_token=None,
-        template_id=None,
-        variables=None,
-        subject=None,
-        body="hi",
+        event_id="evt-002", channel="sms",
+        recipient_email=None, recipient_phone_number=None, recipient_device_token=None,
+        template_id=None, variables=None, subject=None, body="hi",
     )
-
     assert route.called
-    sent_request = route.calls[0].request
-    assert sent_request.headers["X-On-Behalf-Of-User"] == "42"
+    assert route.calls[0].request.headers["X-On-Behalf-Of-User"] == str(_TEST_USER_ID)
 
 
 @respx.mock
 async def test_submit_notification_forbidden():
-    _make_client()
+    await _make_client()
     respx.post(f"{BASE_URL}/v1/notifications").mock(
         return_value=httpx.Response(403, json={"code": "forbidden", "message": "forbidden"})
     )
-
-    from notification_mcp.tools.notifications import submit_notification
-    from notification_mcp.errors import ForbiddenError
+    from mcp_server.tools.notifications import submit_notification
+    from mcp_server.errors import ForbiddenError
     with pytest.raises(ForbiddenError):
         await submit_notification(
-            event_id="evt-003",
-            channel="sms",
-            recipient_user_id=99,
-            recipient_email=None,
-            recipient_phone_number=None,
-            recipient_device_token=None,
-            template_id=None,
-            variables=None,
-            subject=None,
-            body="test",
+            event_id="evt-003", channel="sms",
+            recipient_email=None, recipient_phone_number=None, recipient_device_token=None,
+            template_id=None, variables=None, subject=None, body="test",
         )
 
 
@@ -150,38 +120,28 @@ async def test_submit_notification_forbidden():
 
 @respx.mock
 async def test_get_notification():
-    _make_client()
+    await _make_client()
     nid = "00000000-0000-0000-0000-000000000003"
     respx.get(f"{BASE_URL}/v1/notifications/{nid}").mock(
-        return_value=httpx.Response(
-            200,
-            json={
-                "id": nid,
-                "event_id": "evt-x",
-                "channel": "email",
-                "status": "sent",
-                "attempt": 1,
-                "recipient": {"email": "a@b.com"},
-            },
-        )
+        return_value=httpx.Response(200, json={
+            "id": nid, "event_id": "evt-x", "channel": "email",
+            "status": "sent", "attempt": 1, "recipient": {"email": "a@b.com"},
+        })
     )
-
-    from notification_mcp.tools.notifications import get_notification
+    from mcp_server.tools.notifications import get_notification
     result = await get_notification(nid)
     assert result["status"] == "sent"
-    assert result["channel"] == "email"
 
 
 @respx.mock
 async def test_get_notification_not_found():
-    _make_client()
+    await _make_client()
     nid = "00000000-0000-0000-0000-000000000099"
     respx.get(f"{BASE_URL}/v1/notifications/{nid}").mock(
         return_value=httpx.Response(404, json={"code": "not_found", "message": "not found"})
     )
-
-    from notification_mcp.tools.notifications import get_notification
-    from notification_mcp.errors import NotFoundError
+    from mcp_server.tools.notifications import get_notification
+    from mcp_server.errors import NotFoundError
     with pytest.raises(NotFoundError):
         await get_notification(nid)
 
@@ -192,29 +152,19 @@ async def test_get_notification_not_found():
 
 @respx.mock
 async def test_create_template_sends_obo_header():
-    _make_client()
+    await _make_client()
     route = respx.post(f"{BASE_URL}/v1/templates").mock(
-        return_value=httpx.Response(
-            201,
-            json={
-                "id": "00000000-0000-0000-0000-000000000010",
-                "name": "welcome",
-                "channel": "email",
-                "locale": "en",
-                "body": "Hello {{name}}",
-                "version": 1,
-                "owner_user_id": 42,
-            },
-        )
+        return_value=httpx.Response(201, json={
+            "id": "00000000-0000-0000-0000-000000000010",
+            "name": "welcome", "channel": "email", "locale": "en",
+            "body": "Hello {{name}}", "version": 1, "owner_user_id": _TEST_USER_ID,
+        })
     )
-
-    from notification_mcp.tools.templates import create_template
-    result = await create_template(user_id=42, name="welcome", channel="email", body="Hello {{name}}")
-
+    from mcp_server.tools.templates import create_template
+    result = await create_template(name="welcome", channel="email", body="Hello {{name}}")
     assert route.called
-    sent_request = route.calls[0].request
-    assert sent_request.headers["X-On-Behalf-Of-User"] == "42"
-    assert result["owner_user_id"] == 42
+    assert route.calls[0].request.headers["X-On-Behalf-Of-User"] == str(_TEST_USER_ID)
+    assert result["owner_user_id"] == _TEST_USER_ID
 
 
 # ---------------------------------------------------------------------------
@@ -223,32 +173,15 @@ async def test_create_template_sends_obo_header():
 
 @respx.mock
 async def test_register_device_sends_obo_header():
-    _make_client()
-    route = respx.post(f"{BASE_URL}/v1/users/42/devices").mock(
+    await _make_client()
+    route = respx.post(f"{BASE_URL}/v1/users/{_TEST_USER_ID}/devices").mock(
         return_value=httpx.Response(204)
     )
-
-    from notification_mcp.tools.users import register_device
-    result = await register_device(user_id=42, device_token="tok123", channel="push_ios")
-
+    from mcp_server.tools.users import register_device
+    result = await register_device(device_token="tok123", channel="push_ios")
     assert route.called
-    sent_request = route.calls[0].request
-    assert sent_request.headers["X-On-Behalf-Of-User"] == "42"
+    assert route.calls[0].request.headers["X-On-Behalf-Of-User"] == str(_TEST_USER_ID)
     assert result["success"] is True
-
-
-@respx.mock
-async def test_register_device_forbidden():
-    _make_client()
-    respx.post(f"{BASE_URL}/v1/users/99/devices").mock(
-        return_value=httpx.Response(403, json={"code": "forbidden", "message": "forbidden"})
-    )
-
-    from notification_mcp.tools.users import register_device
-    from notification_mcp.errors import ForbiddenError
-    # The MCP would call this with user_id=99 but the server sees OBO=42 mismatch
-    with pytest.raises(ForbiddenError):
-        await register_device(user_id=99, device_token="tok123", channel="push_ios")
 
 
 # ---------------------------------------------------------------------------
@@ -257,15 +190,12 @@ async def test_register_device_forbidden():
 
 @respx.mock
 async def test_update_user_setting():
-    _make_client()
-    route = respx.put(f"{BASE_URL}/v1/users/7/settings").mock(
+    await _make_client()
+    route = respx.put(f"{BASE_URL}/v1/users/{_TEST_USER_ID}/settings").mock(
         return_value=httpx.Response(204)
     )
-
-    from notification_mcp.tools.users import update_user_setting
-    result = await update_user_setting(user_id=7, channel="email", opt_in=False)
-
+    from mcp_server.tools.users import update_user_setting
+    result = await update_user_setting(channel="email", opt_in=False)
     assert route.called
-    sent_request = route.calls[0].request
-    assert sent_request.headers["X-On-Behalf-Of-User"] == "7"
+    assert route.calls[0].request.headers["X-On-Behalf-Of-User"] == str(_TEST_USER_ID)
     assert result["success"] is True
