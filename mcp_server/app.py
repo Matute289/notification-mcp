@@ -26,6 +26,7 @@ from .config import get_settings
 from .logging_setup import setup_logging
 from .middleware.auth_middleware import AuthMiddleware
 from .middleware.logging_middleware import LoggingMiddleware
+from .middleware.rate_limit import RateLimitMiddleware
 from .services import service_api_client
 
 log = structlog.get_logger(__name__)
@@ -49,11 +50,13 @@ def create_app() -> Starlette:
                  host=settings.mcp_host, port=settings.mcp_port)
         await db.connect(settings)
         await service_api_client.init(settings)
-        async with mcp.session_manager.run():
-            yield
-        await service_api_client.close()
-        await db.disconnect()
-        log.info("shutdown")
+        try:
+            async with mcp.session_manager.run():
+                yield
+        finally:
+            await service_api_client.close()
+            await db.disconnect()
+            log.info("shutdown")
 
     return Starlette(
         routes=[
@@ -66,6 +69,7 @@ def create_app() -> Starlette:
         ],
         middleware=[
             Middleware(AuthMiddleware),
+            Middleware(RateLimitMiddleware),
             Middleware(LoggingMiddleware),
         ],
         lifespan=lifespan,

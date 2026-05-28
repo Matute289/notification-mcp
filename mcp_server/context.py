@@ -18,5 +18,11 @@ def get_current_user_id_or_raise() -> int:
     import os
     stdio_uid = os.environ.get("MCP_STDIO_USER_ID")
     if stdio_uid:
-        return int(stdio_uid)
+        try:
+            return int(stdio_uid)
+        except ValueError:
+            raise UnauthenticatedError(
+                401, "unauthenticated",
+                f"MCP_STDIO_USER_ID must be an integer, got: {stdio_uid!r}",
+            )
     raise UnauthenticatedError(401, "unauthenticated", "no authenticated user in context")

@@ -4,10 +4,9 @@ import time
 from typing import Any
 from uuid import UUID
 
-import structlog
-
 from ..config import get_settings
 from ..context import get_current_user_id_or_raise
+from ._logging import log_tool_call
 from ..models import (
     GetNotificationInput,
     NotificationView,
@@ -16,8 +15,6 @@ from ..models import (
     SubmitResponse,
 )
 from ..services import service_api_client
-
-log = structlog.get_logger(__name__)
 
 
 async def submit_notification(
@@ -76,10 +73,10 @@ async def submit_notification(
             on_behalf_of_user_id=user_id, json_body=payload,
         )
         response = SubmitResponse(**result).model_dump()
-        _log_tool_call(tool_name, user_id, start, success=True)
+        log_tool_call(tool_name, user_id, start, success=True)
         return response
     except Exception as exc:
-        _log_tool_call(tool_name, user_id, start, success=False, error_type=type(exc).__name__)
+        log_tool_call(tool_name, user_id, start, success=False, error_type=type(exc).__name__)
         raise
 
 
@@ -94,27 +91,10 @@ async def get_notification(notification_id: str) -> dict[str, Any]:
             settings, "GET", f"/v1/notifications/{inp.notification_id}"
         )
         response = NotificationView(**result).model_dump()
-        _log_tool_call(tool_name, user_id, start, success=True)
+        log_tool_call(tool_name, user_id, start, success=True)
         return response
     except Exception as exc:
-        _log_tool_call(tool_name, user_id, start, success=False, error_type=type(exc).__name__)
+        log_tool_call(tool_name, user_id, start, success=False, error_type=type(exc).__name__)
         raise
 
 
-def _log_tool_call(
-    tool_name: str,
-    user_id: int,
-    start: float,
-    *,
-    success: bool,
-    error_type: str | None = None,
-) -> None:
-    duration_ms = round((time.perf_counter() - start) * 1000, 1)
-    log.info(
-        "tool_call",
-        tool_name=tool_name,
-        user_id=user_id,
-        duration_ms=duration_ms,
-        success=success,
-        error_type=error_type,
-    )

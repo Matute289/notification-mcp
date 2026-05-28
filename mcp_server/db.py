@@ -22,14 +22,17 @@ CREATE INDEX IF NOT EXISTS idx_api_keys_user_id ON api_keys(user_id);
 
 async def connect(settings: Settings) -> None:
     global _pool
-    _pool = await asyncpg.create_pool(
+    # Create pool and apply schema before exposing via _pool so that
+    # get_pool() never returns a partially-initialized pool.
+    pool = await asyncpg.create_pool(
         settings.database_url,
         min_size=2,
         max_size=10,
         command_timeout=30,
     )
-    async with _pool.acquire() as conn:
+    async with pool.acquire() as conn:
         await conn.execute(_SCHEMA)
+    _pool = pool
 
 
 async def disconnect() -> None:

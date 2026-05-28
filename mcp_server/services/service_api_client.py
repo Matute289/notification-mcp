@@ -85,7 +85,11 @@ async def request(
         raise RuntimeError(f"Response body too large: {len(content)} bytes from {method} {path}")
 
     if response.status_code in (200, 201, 202):
-        return response.json() if content else None
+        if not content:
+            raise RuntimeError(
+                f"Unexpected empty body for {response.status_code} {method} {path}"
+            )
+        return response.json()
     if response.status_code == 204:
         return None
 
