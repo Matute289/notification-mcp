@@ -28,20 +28,27 @@ async def submit_notification_tool(
     subject: str | None = None,
     body: str | None = None,
 ) -> dict[str, Any]:
-    """Submit a notification for delivery on behalf of the authenticated user.
+    """Send a notification to a recipient via email, SMS, or push notification.
 
-    The notification is sent to the authenticated user's own account unless
-    a specific recipient contact is provided.
+    Always gather all required information before calling this tool.
+    For email: suggest a subject based on the message body and wait for the user
+    to confirm it before proceeding. If the recipient's contact details are missing
+    (email address, phone number, or device token), ask the user for them first.
 
-    event_id: idempotency key (1–256 chars). Duplicate event_ids are deduplicated.
-    channel: email | sms | push_ios | push_android.
-    recipient_email: direct email address (channel=email, overrides user's registered email).
-    recipient_phone_number: E.164 phone number (channel=sms, overrides user's registered phone).
-    recipient_device_token: push token (channel=push_ios/android, overrides registered device).
-    template_id: UUID of a pre-created template.
-    variables: key/value pairs for {{variable_name}} template substitution.
-    subject: message subject (overrides template subject).
-    body: message body (use instead of template_id, or to override template body).
+    event_id: a unique identifier for this send (letters, numbers, or dashes, 1–256 chars).
+        Re-submitting the same event_id is safe — duplicates are automatically ignored.
+        Example: "welcome-user-42" or "order-1234-confirmation".
+    channel: the delivery method — email | sms | push_ios | push_android.
+    recipient_email: (email only) destination address. Example: "user@example.com".
+    recipient_phone_number: (sms only) international format. Example: "+5491112345678".
+    recipient_device_token: (push_ios / push_android only) the device push token.
+    template_id: UUID of a pre-saved template. Use instead of body to send a
+        designed message. Example: "550e8400-e29b-41d4-a716-446655440000".
+    variables: values to fill {{placeholder}} fields in the template.
+        Example: {"name": "Ana", "amount": "1500"}.
+    subject: email subject line. Example: "Your order has been confirmed".
+    body: message text. Use this instead of a template, or to override the template body.
+        Example: "Hello {{name}}, how are you?".
     """
     await ctx.report_progress(0, 3, "Validating request")
     await ctx.info(f"Submitting {channel} notification (event_id={event_id})")
@@ -62,9 +69,13 @@ async def submit_notification_tool(
 
 @mcp.tool()
 async def get_notification_tool(notification_id: str, ctx: Context) -> dict[str, Any]:
-    """Get the current status and details of a notification by its UUID.
+    """Retrieve the current status and full details of a previously sent notification.
 
-    notification_id: UUID returned when the notification was submitted.
+    Use this to check whether a notification was delivered, is still in transit,
+    or failed. The status field shows the current state of the delivery.
+
+    notification_id: the UUID returned by submit_notification_tool when the notification
+        was created. Example: "550e8400-e29b-41d4-a716-446655440000".
     """
     await ctx.report_progress(0, 2, "Fetching notification")
     result = await get_notification(notification_id=notification_id)
@@ -84,15 +95,23 @@ async def create_template_tool(
     media_urls: list[str] | None = None,
     version: int = 1,
 ) -> dict[str, Any]:
-    """Create a reusable notification template owned by the authenticated user.
+    """Create a reusable notification template that can be sent to any user later.
 
-    name: human-readable template name (max 128 chars).
-    channel: email | sms | push_ios | push_android.
-    body: message body — supports {{variable_name}} interpolation (max 160 000 chars).
-    locale: BCP-47 locale tag (default: en).
-    subject: email subject line.
-    media_urls: media attachment URLs (MMS / rich push), max 10.
-    version: template version number (default: 1).
+    Templates save time when you send the same type of message often. Use
+    {{variable_name}} placeholders in the body (and subject) to insert
+    personalized data at send time.
+
+    name: a human-readable label for this template (max 128 chars).
+        Example: "Welcome Email".
+    channel: the delivery channel for this template — email | sms | push_ios | push_android.
+    body: the message content (max 160 000 chars). Use {{name}} syntax for dynamic values.
+        Example: "Hi {{name}}, your order {{order_id}} has been confirmed!".
+    locale: the BCP-47 language code of the template text (default: en).
+        Examples: "es" for Spanish, "pt" for Portuguese, "fr" for French.
+    subject: the email subject line (only used when channel=email).
+        Example: "Order Confirmed".
+    media_urls: list of image or video URLs to attach (MMS or rich push), max 10 URLs.
+    version: template revision number (default: 1). Increment when updating a template.
     """
     await ctx.report_progress(0, 3, "Validating template")
     await ctx.info(f"Creating template '{name}' for channel={channel}")
@@ -107,9 +126,12 @@ async def create_template_tool(
 
 @mcp.tool()
 async def get_template_tool(template_id: str, ctx: Context) -> dict[str, Any]:
-    """Retrieve a notification template by its UUID. Results are cached in-process.
+    """Retrieve a saved notification template by its UUID. Results are cached.
 
-    template_id: UUID of the template.
+    Use list_templates_tool first if you need to find the template's ID by name.
+
+    template_id: UUID of the template to retrieve.
+        Example: "550e8400-e29b-41d4-a716-446655440000".
     """
     await ctx.report_progress(0, 2, "Looking up template")
     result = await get_template(template_id=template_id)
@@ -120,10 +142,14 @@ async def get_template_tool(template_id: str, ctx: Context) -> dict[str, Any]:
 
 @mcp.tool()
 async def register_device_tool(device_token: str, channel: str, ctx: Context) -> dict[str, Any]:
-    """Register or refresh a push notification device token for the authenticated user.
+    """Register or refresh a mobile device to receive push notifications.
 
-    device_token: APNs or FCM device token provided by the mobile OS (max 512 chars).
-    channel: push_ios (APNs) | push_android (FCM).
+    Call this when a user first installs the app, or when the mobile OS issues a
+    new push token. The device token is generated automatically by the phone —
+    the mobile app provides it; the user does not type it manually.
+
+    device_token: the APNs (iOS) or FCM (Android) token from the mobile OS (max 512 chars).
+    channel: the push platform — push_ios (iPhone/iPad) | push_android (Android).
     """
     await ctx.report_progress(0, 2, "Registering device")
     await ctx.info(f"Registering device for channel={channel}")
@@ -134,10 +160,13 @@ async def register_device_tool(device_token: str, channel: str, ctx: Context) ->
 
 @mcp.tool()
 async def update_user_setting_tool(channel: str, opt_in: bool, ctx: Context) -> dict[str, Any]:
-    """Update the authenticated user's notification opt-in/opt-out preference.
+    """Turn a notification channel on or off for the current user.
 
-    channel: email | sms | push_ios | push_android.
-    opt_in: true to enable notifications on this channel, false to opt out.
+    Use this when the user wants to start or stop receiving notifications
+    on a specific channel.
+
+    channel: the channel to update — email | sms | push_ios | push_android.
+    opt_in: true to enable notifications on this channel, false to disable them.
     """
     await ctx.report_progress(0, 2, "Updating preference")
     action = "opted in to" if opt_in else "opted out of"
