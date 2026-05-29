@@ -85,3 +85,22 @@ async def get_template(template_id: str) -> dict[str, Any]:
     except Exception as exc:
         log_tool_call(tool_name, user_id, start, success=False, error_type=type(exc).__name__)
         raise
+
+
+async def list_templates() -> dict[str, Any]:
+    settings = get_settings()
+    user_id = get_current_user_id_or_raise()
+    start = time.perf_counter()
+    tool_name = "list_templates"
+    try:
+        result = await service_api_client.request(settings, "GET", "/v1/templates")
+        validated: dict[str, Any] = {
+            channel: [TemplateView(**t).model_dump() for t in templates]
+            for channel, templates in result.items()
+            if isinstance(templates, list)
+        }
+        log_tool_call(tool_name, user_id, start, success=True)
+        return validated
+    except Exception as exc:
+        log_tool_call(tool_name, user_id, start, success=False, error_type=type(exc).__name__)
+        raise

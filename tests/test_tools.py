@@ -199,3 +199,42 @@ async def test_update_user_setting():
     assert route.called
     assert route.calls[0].request.headers["X-On-Behalf-Of-User"] == str(_TEST_USER_ID)
     assert result["success"] is True
+
+
+# ---------------------------------------------------------------------------
+# list_templates
+# ---------------------------------------------------------------------------
+
+@respx.mock
+async def test_list_templates_returns_grouped_by_channel():
+    await _make_client()
+    tid = "00000000-0000-0000-0000-000000000010"
+    respx.get(f"{BASE_URL}/v1/templates").mock(
+        return_value=httpx.Response(200, json={
+            "email": [
+                {"id": tid, "name": "Welcome Email", "channel": "email",
+                 "locale": "en", "body": "Hi {{name}}", "version": 1}
+            ],
+            "sms": [],
+            "push_ios": [],
+            "push_android": [],
+        })
+    )
+    from mcp_server.tools.templates import list_templates
+    result = await list_templates()
+    assert "email" in result
+    assert len(result["email"]) == 1
+    assert result["email"][0]["name"] == "Welcome Email"
+    assert result["sms"] == []
+
+
+@respx.mock
+async def test_list_templates_makes_get_request():
+    await _make_client()
+    route = respx.get(f"{BASE_URL}/v1/templates").mock(
+        return_value=httpx.Response(200, json={"email": [], "sms": [], "push_ios": [], "push_android": []})
+    )
+    from mcp_server.tools.templates import list_templates
+    result = await list_templates()
+    assert route.called
+    assert result == {"email": [], "sms": [], "push_ios": [], "push_android": []}
