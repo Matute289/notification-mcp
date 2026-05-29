@@ -238,3 +238,68 @@ async def test_list_templates_sends_obo_header():
     await list_templates()
     assert route.called
     assert route.calls[0].request.headers["X-On-Behalf-Of-User"] == str(_TEST_USER_ID)
+
+
+# ---------------------------------------------------------------------------
+# update_template
+# ---------------------------------------------------------------------------
+
+@respx.mock
+async def test_update_template_success():
+    await _make_client()
+    tid = "00000000-0000-0000-0000-000000000011"
+    route = respx.put(f"{BASE_URL}/v1/templates/{tid}").mock(
+        return_value=httpx.Response(200, json={
+            "id": tid, "name": "Welcome v2", "channel": "email",
+            "locale": "es", "body": "Hola {{nombre}}", "version": 2,
+            "owner_user_id": _TEST_USER_ID,
+        })
+    )
+    from mcp_server.tools.templates import update_template
+    result = await update_template(
+        template_id=tid,
+        name="Welcome v2",
+        channel="email",
+        body="Hola {{nombre}}",
+        locale="es",
+        version=2,
+    )
+    assert route.called
+    assert result["name"] == "Welcome v2"
+    assert result["version"] == 2
+    assert result["locale"] == "es"
+
+
+@respx.mock
+async def test_update_template_sends_obo_header():
+    await _make_client()
+    tid = "00000000-0000-0000-0000-000000000012"
+    route = respx.put(f"{BASE_URL}/v1/templates/{tid}").mock(
+        return_value=httpx.Response(200, json={
+            "id": tid, "name": "T", "channel": "sms", "locale": "en",
+            "body": "Hi", "version": 1, "owner_user_id": _TEST_USER_ID,
+        })
+    )
+    from mcp_server.tools.templates import update_template
+    await update_template(template_id=tid, name="T", channel="sms", body="Hi")
+    assert route.called
+    assert route.calls[0].request.headers["X-On-Behalf-Of-User"] == str(_TEST_USER_ID)
+
+
+@respx.mock
+async def test_update_template_sends_subject_when_provided():
+    await _make_client()
+    tid = "00000000-0000-0000-0000-000000000013"
+    route = respx.put(f"{BASE_URL}/v1/templates/{tid}").mock(
+        return_value=httpx.Response(200, json={
+            "id": tid, "name": "T", "channel": "email", "locale": "en",
+            "subject": "Hello!", "body": "Hi", "version": 1,
+        })
+    )
+    from mcp_server.tools.templates import update_template
+    import json as _json
+    await update_template(
+        template_id=tid, name="T", channel="email", body="Hi", subject="Hello!",
+    )
+    sent_body = _json.loads(route.calls[0].request.content)
+    assert sent_body["subject"] == "Hello!"

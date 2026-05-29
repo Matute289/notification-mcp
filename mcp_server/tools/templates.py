@@ -6,7 +6,7 @@ from uuid import UUID
 
 from ..config import get_settings
 from ..context import get_current_user_id_or_raise
-from ..models import CreateTemplateInput, GetTemplateInput, TemplateView
+from ..models import CreateTemplateInput, GetTemplateInput, TemplateView, UpdateTemplateInput
 from ..services import service_api_client
 from ._logging import log_tool_call
 
@@ -101,6 +101,47 @@ async def list_templates() -> dict[str, Any]:
         }
         log_tool_call(tool_name, user_id, start, success=True)
         return validated
+    except Exception as exc:
+        log_tool_call(tool_name, user_id, start, success=False, error_type=type(exc).__name__)
+        raise
+
+
+async def update_template(
+    template_id: str,
+    name: str,
+    channel: str,
+    body: str,
+    locale: str = "en",
+    subject: str | None = None,
+    media_urls: list[str] | None = None,
+    version: int = 1,
+) -> dict[str, Any]:
+    settings = get_settings()
+    user_id = get_current_user_id_or_raise()
+    start = time.perf_counter()
+    tool_name = "update_template"
+    try:
+        inp = UpdateTemplateInput(
+            template_id=UUID(template_id),
+            name=name, channel=channel, locale=locale,  # type: ignore[arg-type]
+            subject=subject, body=body, media_urls=media_urls, version=version,
+        )
+        payload: dict[str, Any] = {
+            "name": inp.name, "channel": inp.channel, "locale": inp.locale,
+            "body": inp.body, "version": inp.version,
+        }
+        if inp.subject:
+            payload["subject"] = inp.subject
+        if inp.media_urls:
+            payload["media_urls"] = inp.media_urls
+
+        result = await service_api_client.request(
+            settings, "PUT", f"/v1/templates/{inp.template_id}",
+            on_behalf_of_user_id=user_id, json_body=payload,
+        )
+        response = TemplateView(**result).model_dump()
+        log_tool_call(tool_name, user_id, start, success=True)
+        return response
     except Exception as exc:
         log_tool_call(tool_name, user_id, start, success=False, error_type=type(exc).__name__)
         raise
