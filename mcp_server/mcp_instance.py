@@ -9,6 +9,10 @@ from mcp.server.fastmcp import FastMCP, Context
 from .tools.notifications import get_notification, submit_notification
 from .tools.templates import create_template, get_template, list_templates, update_template
 from .tools.users import register_device, update_user_setting
+from .prompts.create_template import build_create_template_message
+from .prompts.update_template import build_update_template_message
+from .prompts.manage_preferences import build_manage_preferences_message
+from .prompts.onboarding import build_onboarding_message
 
 log = structlog.get_logger(__name__)
 
@@ -237,3 +241,38 @@ async def update_template_tool(
     await ctx.report_progress(3, 3, "Done")
     await ctx.info(f"Template updated — name='{result.get('name')}', version={result.get('version')}")
     return result
+
+
+@mcp.prompt(
+    name="create_template",
+    description="Asistente guiado para crear templates de notificación en uno o varios canales.",
+)
+def create_template_prompt(
+    channel: str | None = None,
+    purpose: str | None = None,
+) -> str:
+    return build_create_template_message(channel=channel, purpose=purpose)
+
+
+@mcp.prompt(
+    name="update_template",
+    description="Asistente guiado para modificar un template de notificación existente.",
+)
+def update_template_prompt(channel: str | None = None) -> str:
+    return build_update_template_message(channel=channel)
+
+
+@mcp.prompt(
+    name="manage_preferences",
+    description="Asistente para activar/desactivar canales y registrar dispositivos push.",
+)
+def manage_preferences_prompt() -> str:
+    return build_manage_preferences_message()
+
+
+@mcp.prompt(
+    name="onboarding",
+    description="Configuración inicial: registrá tu dispositivo y establecé tus preferencias de notificación.",
+)
+def onboarding_prompt() -> str:
+    return build_onboarding_message()
