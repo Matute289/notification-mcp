@@ -53,6 +53,18 @@ class CreateTemplateInput(BaseModel):
     version: Annotated[int, Field(ge=1, le=9999)] = 1
 
 
+class UpdateTemplateInput(BaseModel):
+    model_config = _STRICT
+    template_id: UUID
+    name: Annotated[str, Field(min_length=1, max_length=128)]
+    channel: Channel
+    locale: Annotated[str, Field(min_length=2, max_length=10)] = "en"
+    subject: str | None = Field(None, max_length=998)
+    body: Annotated[str, Field(min_length=1, max_length=160_000)]
+    media_urls: Annotated[list[str], Field(max_length=10)] | None = None
+    version: Annotated[int, Field(ge=1, le=9999)] = 1
+
+
 class GetTemplateInput(BaseModel):
     model_config = _STRICT
     template_id: UUID
