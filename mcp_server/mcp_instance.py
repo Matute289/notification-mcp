@@ -7,7 +7,7 @@ import structlog
 from mcp.server.fastmcp import FastMCP, Context
 
 from .tools.notifications import get_notification, submit_notification
-from .tools.templates import create_template, get_template
+from .tools.templates import create_template, get_template, list_templates, update_template
 from .tools.users import register_device, update_user_setting
 
 log = structlog.get_logger(__name__)
@@ -144,4 +144,67 @@ async def update_user_setting_tool(channel: str, opt_in: bool, ctx: Context) -> 
     await ctx.info(f"User {action} {channel} notifications")
     result = await update_user_setting(channel=channel, opt_in=opt_in)
     await ctx.report_progress(2, 2, "Done")
+    return result
+
+
+@mcp.tool()
+async def list_templates_tool(ctx: Context) -> dict[str, Any]:
+    """Show all notification templates you have saved, grouped by channel.
+
+    Returns a dictionary where each key is a channel name (email, sms, push_ios,
+    push_android) and each value is a list of your templates for that channel.
+    Use this to browse your templates before editing or reusing them.
+
+    Each template entry includes: id, name, channel, locale, body, and version.
+    The id is the UUID you need to pass to get_template_tool or update_template_tool.
+    """
+    await ctx.report_progress(0, 2, "Fetching your templates")
+    result = await list_templates()
+    await ctx.report_progress(2, 2, "Done")
+    total = sum(len(v) for v in result.values() if isinstance(v, list))
+    await ctx.info(f"Found {total} template(s)")
+    return result
+
+
+@mcp.tool()
+async def update_template_tool(
+    template_id: str,
+    name: str,
+    channel: str,
+    body: str,
+    ctx: Context,
+    locale: str = "en",
+    subject: str | None = None,
+    media_urls: list[str] | None = None,
+    version: int = 1,
+) -> dict[str, Any]:
+    """Replace an existing notification template with new content (full update).
+
+    This replaces every field of the template — supply all fields, not just the ones
+    you want to change. To keep an existing field unchanged, copy its current value
+    from get_template_tool and include it here.
+
+    template_id: UUID of the template to update. Get this from list_templates_tool.
+        Example: "550e8400-e29b-41d4-a716-446655440000".
+    name: new human-readable label for this template (max 128 chars).
+        Example: "Welcome Email v2".
+    channel: the delivery channel — email | sms | push_ios | push_android.
+        Must match the original template's channel.
+    body: new message text (max 160 000 chars). Use {{variable_name}} for dynamic values.
+        Example: "Hola {{nombre}}, tu pedido {{numero}} fue confirmado.".
+    locale: BCP-47 language code of the template text (default: en).
+        Examples: "es" for Spanish, "pt" for Portuguese, "fr" for French.
+    subject: new email subject line (only for channel=email).
+        Example: "Tu pedido fue confirmado".
+    media_urls: new media attachment URLs for MMS or rich push (max 10 URLs).
+    version: increment this number to signal a new revision. Example: if current is 1, pass 2.
+    """
+    await ctx.report_progress(0, 3, "Validating update")
+    await ctx.info(f"Updating template {template_id}")
+    result = await update_template(
+        template_id=template_id, name=name, channel=channel, body=body,
+        locale=locale, subject=subject, media_urls=media_urls, version=version,
+    )
+    await ctx.report_progress(3, 3, "Done")
+    await ctx.info(f"Template updated — name='{result.get('name')}', version={result.get('version')}")
     return result
