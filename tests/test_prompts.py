@@ -95,3 +95,92 @@ def test_update_template_prompt_returns_nonempty_string():
     msg = build_update_template_message()
     assert isinstance(msg, str)
     assert len(msg) > 100
+
+
+# ---------------------------------------------------------------------------
+# manage_preferences
+# ---------------------------------------------------------------------------
+
+def test_manage_preferences_prompt_shows_top_level_menu():
+    from mcp_server.prompts.manage_preferences import build_manage_preferences_message
+    msg = build_manage_preferences_message()
+    # Must show both main options
+    assert "activar" in msg.lower() or "desactivar" in msg.lower()
+    assert "push" in msg.lower()
+
+
+def test_manage_preferences_prompt_mentions_all_channels():
+    from mcp_server.prompts.manage_preferences import build_manage_preferences_message
+    msg = build_manage_preferences_message()
+    assert "email" in msg.lower()
+    assert "sms" in msg.lower()
+    assert "push_ios" in msg.lower() or "push ios" in msg.lower()
+    assert "push_android" in msg.lower() or "push android" in msg.lower()
+
+
+def test_manage_preferences_prompt_mentions_tools():
+    from mcp_server.prompts.manage_preferences import build_manage_preferences_message
+    msg = build_manage_preferences_message()
+    assert "update_user_setting_tool" in msg
+    assert "register_device_tool" in msg
+
+
+def test_manage_preferences_prompt_explains_device_token():
+    from mcp_server.prompts.manage_preferences import build_manage_preferences_message
+    msg = build_manage_preferences_message()
+    # Should explain what a device token is in plain language
+    assert "teléfono" in msg.lower() or "celular" in msg.lower() or "phone" in msg.lower()
+
+
+def test_manage_preferences_prompt_returns_nonempty_string():
+    from mcp_server.prompts.manage_preferences import build_manage_preferences_message
+    msg = build_manage_preferences_message()
+    assert isinstance(msg, str)
+    assert len(msg) > 100
+
+
+# ---------------------------------------------------------------------------
+# onboarding
+# ---------------------------------------------------------------------------
+
+def test_onboarding_prompt_includes_welcome():
+    from mcp_server.prompts.onboarding import build_onboarding_message
+    msg = build_onboarding_message()
+    assert "bienvenid" in msg.lower() or "salud" in msg.lower()
+
+
+def test_onboarding_prompt_covers_push_device_registration():
+    from mcp_server.prompts.onboarding import build_onboarding_message
+    msg = build_onboarding_message()
+    assert "register_device_tool" in msg
+    assert "push" in msg.lower()
+
+
+def test_onboarding_prompt_covers_channel_preferences():
+    from mcp_server.prompts.onboarding import build_onboarding_message
+    msg = build_onboarding_message()
+    assert "update_user_setting_tool" in msg
+    assert "email" in msg.lower()
+    assert "sms" in msg.lower()
+
+
+def test_onboarding_prompt_offers_next_steps():
+    from mcp_server.prompts.onboarding import build_onboarding_message
+    msg = build_onboarding_message()
+    assert "submit_notification_tool" in msg or "notificación de prueba" in msg.lower()
+    assert "template" in msg.lower()
+
+
+def test_onboarding_prompt_explains_system_in_plain_language():
+    from mcp_server.prompts.onboarding import build_onboarding_message
+    msg = build_onboarding_message()
+    assert "email" in msg.lower()
+    assert "sms" in msg.lower()
+    assert "push" in msg.lower()
+
+
+def test_onboarding_prompt_returns_nonempty_string():
+    from mcp_server.prompts.onboarding import build_onboarding_message
+    msg = build_onboarding_message()
+    assert isinstance(msg, str)
+    assert len(msg) > 100
