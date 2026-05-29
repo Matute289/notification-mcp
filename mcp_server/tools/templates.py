@@ -77,7 +77,7 @@ async def get_template(template_id: str) -> dict[str, Any]:
         if cached is not None:
             log_tool_call(tool_name, user_id, start, success=True)
             return cached
-        result = await service_api_client.request(settings, "GET", f"/v1/templates/{tid}")
+        result = await service_api_client.request(settings, "GET", f"/v1/templates/{tid}", on_behalf_of_user_id=user_id)
         view = TemplateView(**result).model_dump()
         _cache_set(tid, view)
         log_tool_call(tool_name, user_id, start, success=True)
@@ -93,7 +93,7 @@ async def list_templates() -> dict[str, Any]:
     start = time.perf_counter()
     tool_name = "list_templates"
     try:
-        result = await service_api_client.request(settings, "GET", "/v1/templates")
+        result = await service_api_client.request(settings, "GET", "/v1/templates", on_behalf_of_user_id=user_id)
         validated: dict[str, Any] = {
             channel: [TemplateView(**t).model_dump() for t in templates]
             for channel, templates in result.items()

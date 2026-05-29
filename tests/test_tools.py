@@ -229,12 +229,12 @@ async def test_list_templates_returns_grouped_by_channel():
 
 
 @respx.mock
-async def test_list_templates_makes_get_request():
+async def test_list_templates_sends_obo_header():
     await _make_client()
     route = respx.get(f"{BASE_URL}/v1/templates").mock(
         return_value=httpx.Response(200, json={"email": [], "sms": [], "push_ios": [], "push_android": []})
     )
     from mcp_server.tools.templates import list_templates
-    result = await list_templates()
+    await list_templates()
     assert route.called
-    assert result == {"email": [], "sms": [], "push_ios": [], "push_android": []}
+    assert route.calls[0].request.headers["X-On-Behalf-Of-User"] == str(_TEST_USER_ID)
