@@ -4,12 +4,12 @@ A production-ready [Model Context Protocol](https://modelcontextprotocol.io/) se
 
 ## Overview
 
-This MCP server exposes 6 notification delivery tools via Model Context Protocol, allowing Claude and other LLM clients to:
+This MCP server exposes 12 notification delivery tools via Model Context Protocol, allowing Claude and other LLM clients to:
 
-- Submit notifications across multiple channels (email, SMS, iOS push, Android push)
-- Create and manage notification templates
-- Register device tokens for push notifications
-- Manage user notification preferences
+- Submit notifications across 8 channels (email, SMS, iOS push, Android push, Telegram, WhatsApp, LINE, Facebook Messenger)
+- Create, retrieve, update, and delete notification templates
+- Register and delete device tokens for push notifications
+- Manage user notification preferences and list notifications
 
 Each request is authenticated with a per-user Bearer API key and signed with HMAC-SHA256 when proxying to NotificationEngine. The server enforces strict input validation, rate limiting (60 requests/min per user), and structured logging.
 
@@ -312,7 +312,7 @@ Register a device token for push notifications.
 Set user notification preferences (opt-in/opt-out per channel).
 
 **Parameters:**
-- `channel` (str, required): `email` | `sms` | `push_ios` | `push_android`
+- `channel` (str, required): `email` | `sms` | `push_ios` | `push_android` | `telegram` | `whatsapp` | `line` | `facebook_messenger`
 - `opt_in` (bool, required): true to enable, false to disable
 
 **Response:**
@@ -321,6 +321,91 @@ Set user notification preferences (opt-in/opt-out per channel).
   "success": true
 }
 ```
+
+### list_notifications
+
+List recent notifications with cursor pagination and optional filters.
+
+**Parameters:**
+- `limit` (int, optional): Max 100, default 20
+- `cursor` (str, optional): Pagination cursor (opaque string from previous response)
+- `status` (str, optional): Filter by status (enqueued, sent, failed, etc.)
+- `channel` (str, optional): Filter by channel
+
+**Response:**
+```json
+{
+  "notifications": [
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440000",
+      "event_id": "order_123_receipt",
+      "channel": "email",
+      "status": "sent"
+    }
+  ],
+  "cursor": "eyJpZCI6IDEyMzQ1Njc4OTAsICJ0YXJnZXQiOiAiZGlyIn0="
+}
+```
+
+### delete_template
+
+Permanently delete a notification template.
+
+**Parameters:**
+- `template_id` (str, required): UUID of the template to delete
+
+**Response:**
+```json
+{
+  "success": true
+}
+```
+
+### delete_device
+
+Unregister a mobile device push token.
+
+**Parameters:**
+- `device_token` (str, required): The push token to unregister
+
+**Response:**
+```json
+{
+  "success": true
+}
+```
+
+### get_user_settings
+
+Retrieve all user notification preferences across all 8 channels.
+
+**Parameters:** None
+
+**Response:**
+```json
+{
+  "settings": [
+    {"channel": "email", "opt_in": true},
+    {"channel": "sms", "opt_in": false},
+    {"channel": "push_ios", "opt_in": true},
+    {"channel": "push_android", "opt_in": true},
+    {"channel": "telegram", "opt_in": false},
+    {"channel": "whatsapp", "opt_in": true},
+    {"channel": "line", "opt_in": true},
+    {"channel": "facebook_messenger", "opt_in": false}
+  ]
+}
+```
+
+## MCP Resources
+
+The server exposes 3 read-only resources clients can subscribe to:
+
+| URI | Description |
+|-----|-------------|
+| `notification://templates` | All user templates grouped by channel |
+| `notification://history` | 20 most recent notifications |
+| `notification://settings` | All 8 channel preferences |
 
 ## Errors
 
@@ -371,7 +456,7 @@ python -m pytest tests/ -v
 - `test_http_app.py` — HTTP endpoints, auth middleware, 401 responses
 - `test_tools.py` — Tool execution, service API mocking (respx)
 
-**Status:** 38/38 passing
+**Status:** 107/107 passing
 
 ### Local Testing with MCP Inspector
 
@@ -438,7 +523,7 @@ notification-mcp/
 │   ├── errors.py                  # NotificationEngineError hierarchy
 │   ├── models.py                  # Pydantic v2 input/response models
 │   ├── logging_setup.py           # structlog JSON/console config
-│   ├── mcp_instance.py            # FastMCP + 6 @mcp.tool registrations
+│   ├── mcp_instance.py            # FastMCP + 12 @mcp.tool, 4 @mcp.prompt, 3 @mcp.resource
 │   ├── middleware/
 │   │   ├── __init__.py
 │   │   ├── auth_middleware.py     # Bearer → user_id → contextvar (pure ASGI)
@@ -447,9 +532,14 @@ notification-mcp/
 │   ├── tools/
 │   │   ├── __init__.py
 │   │   ├── _logging.py            # log_tool_call() helper
-│   │   ├── notifications.py       # submit_notification, get_notification
-│   │   ├── templates.py           # create_template, get_template (TTL cache)
-│   │   └── users.py               # register_device, update_user_setting
+│   │   ├── notifications.py       # submit, get, list_notifications
+│   │   ├── templates.py           # create, get, update (immutable channel/locale/version), delete
+│   │   └── users.py               # register/delete device, update/get user_settings
+│   ├── resources/
+│   │   ├── __init__.py
+│   │   ├── templates.py           # notification://templates
+│   │   ├── history.py             # notification://history
+│   │   └── settings.py            # notification://settings
 │   ├── services/
 │   │   ├── __init__.py
 │   │   └── service_api_client.py  # httpx singleton + HMAC signing
@@ -462,7 +552,8 @@ notification-mcp/
     ├── test_config.py             # Config validation tests
     ├── test_hmac.py               # HMAC signing tests
     ├── test_http_app.py           # HTTP app tests
-    └── test_tools.py              # Tool execution tests
+    ├── test_tools.py              # Tool execution tests
+    └── test_resources.py          # MCP resources tests
 ```
 
 ## Development

@@ -55,16 +55,20 @@ mcp_server/
   models.py             Pydantic v2 input models (extra='forbid', bounds)
   logging_setup.py      structlog JSON (prod) / console (dev) config
   app.py                Starlette app + lifespan + /health + mount /mcp
-  mcp_instance.py       FastMCP instance + 6 @mcp.tool registrations (with ctx: Context)
+  mcp_instance.py       FastMCP instance + 12 @mcp.tool registrations, 4 @mcp.prompt, 3 @mcp.resource (with ctx: Context)
   middleware/
     auth_middleware.py  Bearer → user_id → contextvar; 401 on failure (pure ASGI)
     rate_limit.py       custom sliding-window 60/min keyed by user_id (pure ASGI)
     logging_middleware.py  access log (no params/body logged) (pure ASGI)
   tools/
-    notifications.py    submit_notification, get_notification
-    templates.py        create_template, get_template (TTL cache)
-    users.py            register_device, update_user_setting
+    notifications.py    submit_notification, get_notification, list_notifications
+    templates.py        create_template, get_template (TTL cache), update_template (bug fix: channel/locale/version immutable), delete_template
+    users.py            register_device, delete_device, update_user_setting, get_user_settings
     _logging.py         log_tool_call() helper
+  resources/
+    templates.py        notification://templates (user's templates grouped by channel)
+    history.py          notification://history (20 most recent notifications)
+    settings.py         notification://settings (channel preferences)
   services/
     service_api_client.py  httpx singleton + HMAC-signed requests
   scripts/

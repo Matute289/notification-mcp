@@ -33,13 +33,17 @@ The NotificationEngine MCP Server is a production-ready Model Context Protocol g
     │    3. AuthMiddleware — Bearer token → user_id → contextvar  │
     │                                                             │
     │  FastMCP Instance:                                          │
-    │    6 async tools (@mcp.tool, ctx: Context)                 │
-    │    - submit_notification_tool                               │
-    │    - get_notification_tool                                  │
-    │    - create_template_tool                                   │
-    │    - get_template_tool                                      │
-    │    - register_device_tool                                   │
-    │    - update_user_setting_tool                               │
+    │    12 async tools (@mcp.tool, ctx: Context)                │
+    │    - submit/get/list_notification_tool                      │
+    │    - create/get/update/delete_template_tool                 │
+    │    - register/delete_device_tool                            │
+    │    - update/get_user_setting_tool                           │
+    │                                                             │
+    │    4 prompts (@mcp.prompt)                                  │
+    │    - ask_submit_channel, ask_submit_body, etc.             │
+    │                                                             │
+    │    3 resources (@mcp.resource)                              │
+    │    - notification://templates, history, settings            │
     │                                                             │
     │  Lifespan Management:                                       │
     │    - asyncpg pool (min 2, max 10 connections)               │
@@ -416,6 +420,18 @@ async def get_template(template_id: str):
     # Check in-memory TTL cache first
     # Cache miss: GET /v1/templates/{uuid}
     # Cache result; TTL from settings.template_cache_ttl_s (default 300s)
+
+async def list_templates():
+    # GET /v1/templates
+    # Returns list of TemplateView dicts
+
+async def update_template(template_id, name, body, subject, media_urls):
+    # PUT /v1/templates/{uuid}  (BUG FIX: channel/locale/version removed — immutable)
+    # → TemplateView(**result).model_dump()
+
+async def delete_template(template_id: str):
+    # DELETE /v1/templates/{uuid}
+    # → {"success": true}
 ```
 
 #### `tools/users.py`
@@ -424,8 +440,44 @@ async def get_template(template_id: str):
 async def register_device(device_token: str, channel: str):
     # POST /v1/users/{user_id}/devices  (on_behalf_of_user_id=user_id)
 
+async def delete_device(device_token: str):
+    # DELETE /v1/users/{user_id}/devices/{token}
+
 async def update_user_setting(channel: str, opt_in: bool):
     # PUT /v1/users/{user_id}/settings  (on_behalf_of_user_id=user_id)
+
+async def get_user_settings():
+    # GET /v1/users/{user_id}/settings
+    # Returns all 8 channel preferences
+```
+
+### Resources Module
+
+#### `resources/templates.py`
+
+```python
+@mcp.resource(uri_pattern="notification://templates")
+async def resource_templates(uri: str):
+    # GET /v1/templates
+    # Returns all user's templates grouped by channel
+```
+
+#### `resources/history.py`
+
+```python
+@mcp.resource(uri_pattern="notification://history")
+async def resource_history(uri: str):
+    # GET /v1/notifications?limit=20
+    # Returns 20 most recent notifications
+```
+
+#### `resources/settings.py`
+
+```python
+@mcp.resource(uri_pattern="notification://settings")
+async def resource_settings(uri: str):
+    # GET /v1/users/{user_id}/settings
+    # Returns all 8 channel preferences
 ```
 
 ### Service Module
@@ -560,7 +612,7 @@ service_api_client.request() → response.status_code >= 400
 - Error propagation: Pydantic errors, upstream API errors
 
 ### Test Coverage
-- 38/38 passing (pytest-asyncio in auto mode)
+- 107/107 passing (pytest-asyncio in auto mode)
 - No external services required (all mocked via monkeypatch + respx)
 
 ## Future Improvements
