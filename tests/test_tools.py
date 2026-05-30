@@ -300,3 +300,84 @@ async def test_update_template_sends_subject_when_provided():
     )
     sent_body = _json.loads(route.calls[0].request.content)
     assert sent_body["subject"] == "Hello!"
+
+
+# ---------------------------------------------------------------------------
+# update_template — fix: channel/locale/version must NOT appear in PUT body
+# ---------------------------------------------------------------------------
+
+@respx.mock
+async def test_update_template_does_not_send_channel():
+    await _make_client()
+    tid = "00000000-0000-0000-0000-000000000020"
+    route = respx.put(f"{BASE_URL}/v1/templates/{tid}").mock(
+        return_value=httpx.Response(200, json={
+            "id": tid, "name": "T", "channel": "email", "locale": "en",
+            "body": "Hi", "version": 1, "owner_user_id": _TEST_USER_ID,
+        })
+    )
+    import json as _json
+    from mcp_server.tools.templates import update_template
+    await update_template(template_id=tid, name="T", body="Hi")
+    sent = _json.loads(route.calls[0].request.content)
+    assert "channel" not in sent
+    assert "locale" not in sent
+    assert "version" not in sent
+
+
+@respx.mock
+async def test_update_template_success_without_channel():
+    await _make_client()
+    tid = "00000000-0000-0000-0000-000000000021"
+    route = respx.put(f"{BASE_URL}/v1/templates/{tid}").mock(
+        return_value=httpx.Response(200, json={
+            "id": tid, "name": "Fixed", "channel": "sms", "locale": "es",
+            "body": "Hola", "version": 2, "owner_user_id": _TEST_USER_ID,
+        })
+    )
+    from mcp_server.tools.templates import update_template
+    result = await update_template(template_id=tid, name="Fixed", body="Hola")
+    assert route.called
+    assert result["name"] == "Fixed"
+
+
+# ---------------------------------------------------------------------------
+# delete_template
+# ---------------------------------------------------------------------------
+
+@respx.mock
+async def test_delete_template_success():
+    await _make_client()
+    tid = "00000000-0000-0000-0000-000000000030"
+    route = respx.delete(f"{BASE_URL}/v1/templates/{tid}").mock(
+        return_value=httpx.Response(204)
+    )
+    from mcp_server.tools.templates import delete_template
+    result = await delete_template(template_id=tid)
+    assert route.called
+    assert result == {"success": True}
+
+
+@respx.mock
+async def test_delete_template_sends_obo_header():
+    await _make_client()
+    tid = "00000000-0000-0000-0000-000000000031"
+    route = respx.delete(f"{BASE_URL}/v1/templates/{tid}").mock(
+        return_value=httpx.Response(204)
+    )
+    from mcp_server.tools.templates import delete_template
+    await delete_template(template_id=tid)
+    assert route.calls[0].request.headers["X-On-Behalf-Of-User"] == str(_TEST_USER_ID)
+
+
+@respx.mock
+async def test_delete_template_not_found():
+    await _make_client()
+    tid = "00000000-0000-0000-0000-000000000032"
+    respx.delete(f"{BASE_URL}/v1/templates/{tid}").mock(
+        return_value=httpx.Response(404, json={"code": "not_found", "message": "not found"})
+    )
+    from mcp_server.tools.templates import delete_template
+    from mcp_server.errors import NotFoundError
+    with pytest.raises(NotFoundError):
+        await delete_template(template_id=tid)

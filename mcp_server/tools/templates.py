@@ -140,3 +140,21 @@ async def update_template(
     except Exception as exc:
         log_tool_call(tool_name, user_id, start, success=False, error_type=type(exc).__name__)
         raise
+
+
+async def delete_template(template_id: str) -> dict[str, Any]:
+    settings = get_settings()
+    user_id = get_current_user_id_or_raise()
+    start = time.perf_counter()
+    tool_name = "delete_template"
+    try:
+        inp = GetTemplateInput(template_id=UUID(template_id))
+        await service_api_client.request(
+            settings, "DELETE", f"/v1/templates/{inp.template_id}",
+            on_behalf_of_user_id=user_id,
+        )
+        log_tool_call(tool_name, user_id, start, success=True)
+        return {"success": True}
+    except Exception as exc:
+        log_tool_call(tool_name, user_id, start, success=False, error_type=type(exc).__name__)
+        raise
