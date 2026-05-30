@@ -52,6 +52,18 @@ class UpstreamError(NotificationEngineError):
     pass
 
 
+class ConflictError(NotificationEngineError):
+    """409 — resource already exists (e.g. duplicate event_id in rapid succession)."""
+
+
+class InvalidEmailError(NotificationEngineError):
+    """400 — email address format rejected by NotificationEngine."""
+
+
+class InvalidPhoneError(NotificationEngineError):
+    """400 — phone number format rejected by NotificationEngine."""
+
+
 _CODE_MAP: dict[str, type[NotificationEngineError]] = {
     "not_found": NotFoundError,
     "already_exists": AlreadyExistsError,
@@ -63,6 +75,12 @@ _CODE_MAP: dict[str, type[NotificationEngineError]] = {
     "forbidden": ForbiddenError,
     "unauthenticated": UnauthenticatedError,
     "invalid_on_behalf_of": UnauthenticatedError,
+    "conflict": ConflictError,
+    "invalid_email": InvalidEmailError,
+    "invalid_phone": InvalidPhoneError,
+    "invalid_request": InvalidInputError,
+    "invalid_id": InvalidInputError,
+    "internal_error": UpstreamError,
 }
 
 
