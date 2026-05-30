@@ -9,6 +9,7 @@ from ..context import get_current_user_id_or_raise
 from ._logging import log_tool_call
 from ..models import (
     GetNotificationInput,
+    NotificationListResponse,
     NotificationView,
     RecipientInput,
     SubmitNotificationInput,
@@ -91,6 +92,43 @@ async def get_notification(notification_id: str) -> dict[str, Any]:
             settings, "GET", f"/v1/notifications/{inp.notification_id}"
         )
         response = NotificationView(**result).model_dump()
+        log_tool_call(tool_name, user_id, start, success=True)
+        return response
+    except Exception as exc:
+        log_tool_call(tool_name, user_id, start, success=False, error_type=type(exc).__name__)
+        raise
+
+
+async def list_notifications(
+    limit: int = 20,
+    cursor: str | None = None,
+    channel: str | None = None,
+    status: str | None = None,
+    since: str | None = None,
+    until: str | None = None,
+) -> dict[str, Any]:
+    settings = get_settings()
+    user_id = get_current_user_id_or_raise()
+    start = time.perf_counter()
+    tool_name = "list_notifications"
+    try:
+        params: dict[str, str] = {"limit": str(limit)}
+        if cursor:
+            params["cursor"] = cursor
+        if channel:
+            params["channel"] = channel
+        if status:
+            params["status"] = status
+        if since:
+            params["since"] = since
+        if until:
+            params["until"] = until
+
+        result = await service_api_client.request(
+            settings, "GET", "/v1/notifications",
+            params=params,
+        )
+        response = NotificationListResponse(**result).model_dump()
         log_tool_call(tool_name, user_id, start, success=True)
         return response
     except Exception as exc:

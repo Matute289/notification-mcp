@@ -147,6 +147,51 @@ async def test_get_notification_not_found():
 
 
 # ---------------------------------------------------------------------------
+# list_notifications
+# ---------------------------------------------------------------------------
+
+@respx.mock
+async def test_list_notifications_no_filters():
+    await _make_client()
+    respx.get(f"{BASE_URL}/v1/notifications").mock(
+        return_value=httpx.Response(200, json={
+            "items": [], "next_cursor": "", "limit": 20,
+        })
+    )
+    from mcp_server.tools.notifications import list_notifications
+    result = await list_notifications()
+    assert result["items"] == []
+    assert result["next_cursor"] == ""
+    assert result["limit"] == 20
+
+
+@respx.mock
+async def test_list_notifications_with_channel_filter():
+    await _make_client()
+    route = respx.get(f"{BASE_URL}/v1/notifications").mock(
+        return_value=httpx.Response(200, json={
+            "items": [], "next_cursor": "", "limit": 10,
+        })
+    )
+    from mcp_server.tools.notifications import list_notifications
+    await list_notifications(limit=10, channel="email")
+    assert route.called
+
+
+@respx.mock
+async def test_list_notifications_with_cursor():
+    await _make_client()
+    route = respx.get(f"{BASE_URL}/v1/notifications").mock(
+        return_value=httpx.Response(200, json={
+            "items": [], "next_cursor": "", "limit": 5,
+        })
+    )
+    from mcp_server.tools.notifications import list_notifications
+    await list_notifications(limit=5, cursor="abc123==")
+    assert route.called
+
+
+# ---------------------------------------------------------------------------
 # create_template
 # ---------------------------------------------------------------------------
 
