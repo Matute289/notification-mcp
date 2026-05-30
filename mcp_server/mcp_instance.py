@@ -1,4 +1,4 @@
-"""FastMCP instance with all 6 tools registered."""
+"""FastMCP instance with all tools, prompts, and resources registered."""
 from __future__ import annotations
 
 from typing import Any
@@ -6,13 +6,20 @@ from typing import Any
 import structlog
 from mcp.server.fastmcp import FastMCP, Context
 
-from .tools.notifications import get_notification, submit_notification
-from .tools.templates import create_template, get_template, list_templates, update_template
-from .tools.users import register_device, update_user_setting
+from .tools.notifications import get_notification, list_notifications, submit_notification
+from .tools.templates import (
+    create_template, delete_template, get_template, list_templates, update_template,
+)
+from .tools.users import (
+    delete_device, get_user_settings, register_device, update_user_setting,
+)
 from .prompts.create_template import build_create_template_message
 from .prompts.update_template import build_update_template_message
 from .prompts.manage_preferences import build_manage_preferences_message
 from .prompts.onboarding import build_onboarding_message
+from .resources.templates import build_templates_resource
+from .resources.history import build_history_resource
+from .resources.settings import build_settings_resource
 
 log = structlog.get_logger(__name__)
 
@@ -85,6 +92,43 @@ async def get_notification_tool(notification_id: str, ctx: Context) -> dict[str,
     result = await get_notification(notification_id=notification_id)
     await ctx.report_progress(2, 2, "Done")
     await ctx.info(f"Notification status: {result.get('status', 'unknown')}")
+    return result
+
+
+@mcp.tool()
+async def list_notifications_tool(
+    ctx: Context,
+    limit: int = 20,
+    cursor: str | None = None,
+    channel: str | None = None,
+    status: str | None = None,
+    since: str | None = None,
+    until: str | None = None,
+) -> dict[str, Any]:
+    """List your recent notifications with optional filters and cursor-based pagination.
+
+    When the user asks to see more results, use the next_cursor value from the
+    previous response as the cursor parameter — the user never needs to type it.
+
+    limit: how many notifications to return (1–100, default 20).
+    cursor: leave empty for the first page; use next_cursor from the previous response.
+    channel: filter by channel — email | sms | push_ios | push_android |
+        telegram | whatsapp | line | facebook_messenger.
+    status: filter by delivery status — received | enqueued | in_flight |
+        sent | retrying | dead_letter | failed.
+    since: show only notifications created on or after this timestamp (RFC3339).
+        Example: "2025-01-01T00:00:00Z".
+    until: show only notifications created on or before this timestamp (RFC3339).
+        Example: "2025-12-31T23:59:59Z".
+    """
+    await ctx.report_progress(0, 2, "Fetching notifications")
+    result = await list_notifications(
+        limit=limit, cursor=cursor, channel=channel,
+        status=status, since=since, until=until,
+    )
+    await ctx.report_progress(2, 2, "Done")
+    count = len(result.get("items", []))
+    await ctx.info(f"Found {count} notification(s)")
     return result
 
 
@@ -163,6 +207,22 @@ async def register_device_tool(device_token: str, channel: str, ctx: Context) ->
 
 
 @mcp.tool()
+async def delete_device_tool(device_token: str, channel: str, ctx: Context) -> dict[str, Any]:
+    """Unregister a mobile device so it no longer receives push notifications.
+
+    Use this when a user logs out of a device or the push token is no longer valid.
+
+    device_token: the APNs (iOS) or FCM (Android) token to unregister (max 512 chars).
+    channel: the push platform — push_ios (iPhone/iPad) | push_android (Android).
+    """
+    await ctx.report_progress(0, 2, "Removing device")
+    await ctx.info(f"Deleting device for channel={channel}")
+    result = await delete_device(device_token=device_token, channel=channel)
+    await ctx.report_progress(2, 2, "Done")
+    return result
+
+
+@mcp.tool()
 async def update_user_setting_tool(channel: str, opt_in: bool, ctx: Context) -> dict[str, Any]:
     """Turn a notification channel on or off for the current user.
 
@@ -177,6 +237,24 @@ async def update_user_setting_tool(channel: str, opt_in: bool, ctx: Context) -> 
     await ctx.info(f"User {action} {channel} notifications")
     result = await update_user_setting(channel=channel, opt_in=opt_in)
     await ctx.report_progress(2, 2, "Done")
+    return result
+
+
+@mcp.tool()
+async def get_user_settings_tool(ctx: Context) -> list[dict[str, Any]]:
+    """Show your current notification preferences for all channels.
+
+    Returns all 8 channels with their opt-in status and the last time each
+    was explicitly changed. A null updated_at means the channel was never
+    changed — it uses the default (opt-in).
+
+    Channels: email, sms, push_ios, push_android, telegram, whatsapp,
+    line, facebook_messenger.
+    """
+    await ctx.report_progress(0, 2, "Fetching your preferences")
+    result = await get_user_settings()
+    await ctx.report_progress(2, 2, "Done")
+    await ctx.info(f"Loaded preferences for {len(result)} channel(s)")
     return result
 
 
@@ -203,43 +281,53 @@ async def list_templates_tool(ctx: Context) -> dict[str, Any]:
 async def update_template_tool(
     template_id: str,
     name: str,
-    channel: str,
     body: str,
     ctx: Context,
-    locale: str = "en",
     subject: str | None = None,
     media_urls: list[str] | None = None,
-    version: int = 1,
 ) -> dict[str, Any]:
-    """Replace an existing notification template with new content (full update).
+    """Replace the content of an existing notification template (full update).
 
-    This replaces every field of the template — supply all fields, not just the ones
-    you want to change. To keep an existing field unchanged, copy its current value
-    from get_template_tool and include it here.
+    Channel and locale cannot be changed after a template is created. To send
+    a template in a different channel or language, create a new one.
+    To find the template_id, use list_templates_tool first.
 
     template_id: UUID of the template to update. Get this from list_templates_tool.
         Example: "550e8400-e29b-41d4-a716-446655440000".
     name: new human-readable label for this template (max 128 chars).
         Example: "Welcome Email v2".
-    channel: the delivery channel — email | sms | push_ios | push_android.
-        Must match the original template's channel.
     body: new message text (max 160 000 chars). Use {{variable_name}} for dynamic values.
-        Example: "Hola {{nombre}}, tu pedido {{numero}} fue confirmado.".
-    locale: BCP-47 language code of the template text (default: en).
-        Examples: "es" for Spanish, "pt" for Portuguese, "fr" for French.
+        Example: "Hola {{nombre}}, tu pedido fue confirmado.".
     subject: new email subject line (only for channel=email).
         Example: "Tu pedido fue confirmado".
     media_urls: new media attachment URLs for MMS or rich push (max 10 URLs).
-    version: increment this number to signal a new revision. Example: if current is 1, pass 2.
     """
     await ctx.report_progress(0, 3, "Validating update")
     await ctx.info(f"Updating template {template_id}")
     result = await update_template(
-        template_id=template_id, name=name, channel=channel, body=body,
-        locale=locale, subject=subject, media_urls=media_urls, version=version,
+        template_id=template_id, name=name, body=body,
+        subject=subject, media_urls=media_urls,
     )
     await ctx.report_progress(3, 3, "Done")
-    await ctx.info(f"Template updated — name='{result.get('name')}', version={result.get('version')}")
+    await ctx.info(f"Template updated — name='{result.get('name')}'")
+    return result
+
+
+@mcp.tool()
+async def delete_template_tool(template_id: str, ctx: Context) -> dict[str, Any]:
+    """Permanently delete a notification template. This action cannot be undone.
+
+    Always confirm with the user before calling this tool — show them the
+    template name and ask for explicit confirmation.
+
+    template_id: UUID of the template to delete. Get this from list_templates_tool.
+        Example: "550e8400-e29b-41d4-a716-446655440000".
+    """
+    await ctx.report_progress(0, 2, "Deleting template")
+    await ctx.info(f"Deleting template {template_id}")
+    result = await delete_template(template_id=template_id)
+    await ctx.report_progress(2, 2, "Done")
+    await ctx.info("Template deleted")
     return result
 
 
@@ -276,3 +364,30 @@ def manage_preferences_prompt() -> str:
 )
 def onboarding_prompt() -> str:
     return build_onboarding_message()
+
+
+@mcp.resource(
+    "notification://templates",
+    mime_type="application/json",
+    description="Templates de notificación del usuario, agrupados por canal.",
+)
+async def templates_resource() -> str:
+    return await build_templates_resource()
+
+
+@mcp.resource(
+    "notification://history",
+    mime_type="application/json",
+    description="Las 20 notificaciones más recientes del usuario.",
+)
+async def history_resource() -> str:
+    return await build_history_resource()
+
+
+@mcp.resource(
+    "notification://settings",
+    mime_type="application/json",
+    description="Preferencias de notificación del usuario por canal.",
+)
+async def settings_resource() -> str:
+    return await build_settings_resource()
