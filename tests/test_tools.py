@@ -247,6 +247,64 @@ async def test_update_user_setting():
 
 
 # ---------------------------------------------------------------------------
+# delete_device
+# ---------------------------------------------------------------------------
+
+@respx.mock
+async def test_delete_device_success():
+    await _make_client()
+    route = respx.delete(f"{BASE_URL}/v1/users/{_TEST_USER_ID}/devices").mock(
+        return_value=httpx.Response(204)
+    )
+    from mcp_server.tools.users import delete_device
+    result = await delete_device(device_token="tok123", channel="push_ios")
+    assert route.called
+    assert result == {"success": True}
+
+
+@respx.mock
+async def test_delete_device_sends_obo_header():
+    await _make_client()
+    route = respx.delete(f"{BASE_URL}/v1/users/{_TEST_USER_ID}/devices").mock(
+        return_value=httpx.Response(204)
+    )
+    from mcp_server.tools.users import delete_device
+    await delete_device(device_token="tok456", channel="push_android")
+    assert route.calls[0].request.headers["X-On-Behalf-Of-User"] == str(_TEST_USER_ID)
+
+
+# ---------------------------------------------------------------------------
+# get_user_settings
+# ---------------------------------------------------------------------------
+
+@respx.mock
+async def test_get_user_settings_returns_list():
+    await _make_client()
+    respx.get(f"{BASE_URL}/v1/users/{_TEST_USER_ID}/settings").mock(
+        return_value=httpx.Response(200, json=[
+            {"channel": "email", "opt_in": True, "updated_at": None},
+            {"channel": "sms", "opt_in": False, "updated_at": "2025-03-10T14:00:00Z"},
+        ])
+    )
+    from mcp_server.tools.users import get_user_settings
+    result = await get_user_settings()
+    assert len(result) == 2
+    assert result[0]["channel"] == "email"
+    assert result[1]["opt_in"] is False
+
+
+@respx.mock
+async def test_get_user_settings_sends_obo_header():
+    await _make_client()
+    route = respx.get(f"{BASE_URL}/v1/users/{_TEST_USER_ID}/settings").mock(
+        return_value=httpx.Response(200, json=[])
+    )
+    from mcp_server.tools.users import get_user_settings
+    await get_user_settings()
+    assert route.calls[0].request.headers["X-On-Behalf-Of-User"] == str(_TEST_USER_ID)
+
+
+# ---------------------------------------------------------------------------
 # list_templates
 # ---------------------------------------------------------------------------
 
