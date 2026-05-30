@@ -57,10 +57,14 @@ async def request(
     *,
     on_behalf_of_user_id: int | None = None,
     json_body: Any = None,
+    params: dict[str, str] | None = None,
 ) -> Any:
     """Sign and execute a request to the Service API (NotificationEngine).
 
     Returns parsed JSON on 2xx. Raises NotificationEngineError subclass on 4xx/5xx.
+
+    params: optional query parameters — appended by httpx to the URL but NOT
+        included in the HMAC signature path (backend verifier strips query params).
     """
     raw_body = b""
     if json_body is not None:
@@ -77,7 +81,8 @@ async def request(
 
     headers = {**auth_headers, "Content-Type": "application/json"}
     response = await _get_client().request(
-        method, path, content=raw_body if raw_body else None, headers=headers
+        method, path, content=raw_body if raw_body else None, headers=headers,
+        params=params,
     )
 
     content = response.content
