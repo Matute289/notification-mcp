@@ -9,8 +9,6 @@ from __future__ import annotations
 import json
 import time
 from collections import defaultdict
-from typing import Any
-
 import structlog
 from starlette.types import ASGIApp, Receive, Scope, Send
 
@@ -52,9 +50,12 @@ class RateLimitMiddleware:
 
         # Evict expired entries
         self._windows[key] = [t for t in timestamps if t > window_start]
+        if not self._windows[key]:
+            del self._windows[key]
 
-        if len(self._windows[key]) >= limit:
-            retry_after = int(self._windows[key][0] + window_s - now) + 1
+        current_window = self._windows.get(key, [])
+        if len(current_window) >= limit:
+            retry_after = int(current_window[0] + window_s - now) + 1
             ip = _client_ip(scope)
             log.warning("rate_limit_exceeded", user_id=uid, ip=ip, path=path,
                         limit=limit, retry_after=retry_after)
