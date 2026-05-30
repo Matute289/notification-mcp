@@ -6,6 +6,7 @@ from uuid import UUID
 
 from ..config import get_settings
 from ..context import get_current_user_id_or_raise
+from ..errors import UpstreamError
 from ..models import CreateTemplateInput, GetTemplateInput, TemplateView, UpdateTemplateInput
 from ..services import service_api_client
 from ._logging import log_tool_call
@@ -99,6 +100,8 @@ async def list_templates() -> dict[str, Any]:
     tool_name = "list_templates"
     try:
         result = await service_api_client.request(settings, "GET", "/v1/templates", on_behalf_of_user_id=user_id)
+        if not isinstance(result, dict):
+            raise UpstreamError(500, "upstream_error", f"Expected dict from GET /v1/templates, got {type(result).__name__}")
         validated: dict[str, Any] = {
             channel: [TemplateView(**t).model_dump() for t in templates]
             for channel, templates in result.items()

@@ -6,6 +6,7 @@ from uuid import UUID
 
 from ..config import get_settings
 from ..context import get_current_user_id_or_raise
+from ..errors import UpstreamError
 from ._logging import log_tool_call
 from ..models import (
     GetNotificationInput,
@@ -92,6 +93,8 @@ async def get_notification(notification_id: str) -> dict[str, Any]:
             settings, "GET", f"/v1/notifications/{inp.notification_id}",
             on_behalf_of_user_id=user_id,
         )
+        if result is None:
+            raise UpstreamError(500, "upstream_error", f"Empty response from GET /v1/notifications/{inp.notification_id}")
         response = NotificationView(**result).model_dump()
         log_tool_call(tool_name, user_id, start, success=True)
         return response

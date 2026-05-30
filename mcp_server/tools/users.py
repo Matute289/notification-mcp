@@ -5,6 +5,7 @@ from typing import Any
 
 from ..config import get_settings
 from ..context import get_current_user_id_or_raise
+from ..errors import UpstreamError
 from ..models import RegisterDeviceInput, SettingView, UpdateUserSettingInput
 from ..services import service_api_client
 from ._logging import log_tool_call
@@ -77,6 +78,8 @@ async def get_user_settings() -> list[dict[str, Any]]:
             settings, "GET", f"/v1/users/{user_id}/settings",
             on_behalf_of_user_id=user_id,
         )
+        if not isinstance(result, list):
+            raise UpstreamError(500, "upstream_error", f"Expected list from GET /v1/users/{user_id}/settings, got {type(result).__name__}")
         response = [SettingView(**s).model_dump() for s in result]
         log_tool_call(tool_name, user_id, start, success=True)
         return response
