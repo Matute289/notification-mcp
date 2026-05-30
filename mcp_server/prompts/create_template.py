@@ -33,7 +33,11 @@ def build_create_template_message(
             "   b) SMS (mensaje de texto)\n"
             "   c) Push iOS (iPhone/iPad)\n"
             "   d) Push Android\n"
-            "   e) Todos los anteriores\n"
+            "   e) Telegram\n"
+            "   f) WhatsApp\n"
+            "   g) Line\n"
+            "   h) Facebook Messenger\n"
+            "   i) Todos los anteriores\n"
             "   El usuario puede elegir uno o varios combinando letras (ej: \"a, b\").\n\n"
         )
 

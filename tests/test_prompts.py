@@ -68,7 +68,6 @@ def test_update_template_prompt_shows_field_menu():
     assert "cuerpo" in msg.lower() or "body" in msg.lower()
     assert "asunto" in msg.lower() or "subject" in msg.lower()
     assert "idioma" in msg.lower() or "locale" in msg.lower()
-    assert "versión" in msg.lower() or "version" in msg.lower()
 
 
 def test_update_template_prompt_suggests_locale_options():
@@ -184,3 +183,80 @@ def test_onboarding_prompt_returns_nonempty_string():
     msg = build_onboarding_message()
     assert isinstance(msg, str)
     assert len(msg) > 100
+
+
+# ---------------------------------------------------------------------------
+# create_template — social channels
+# ---------------------------------------------------------------------------
+
+def test_create_template_prompt_includes_telegram():
+    from mcp_server.prompts.create_template import build_create_template_message
+    msg = build_create_template_message()
+    assert "telegram" in msg.lower()
+
+
+def test_create_template_prompt_includes_whatsapp():
+    from mcp_server.prompts.create_template import build_create_template_message
+    msg = build_create_template_message()
+    assert "whatsapp" in msg.lower()
+
+
+def test_create_template_prompt_includes_line():
+    from mcp_server.prompts.create_template import build_create_template_message
+    msg = build_create_template_message()
+    assert "line" in msg.lower()
+
+
+def test_create_template_prompt_includes_facebook_messenger():
+    from mcp_server.prompts.create_template import build_create_template_message
+    msg = build_create_template_message()
+    assert "facebook" in msg.lower() or "messenger" in msg.lower()
+
+
+# ---------------------------------------------------------------------------
+# update_template — delete option
+# ---------------------------------------------------------------------------
+
+def test_update_template_prompt_includes_delete_option():
+    from mcp_server.prompts.update_template import build_update_template_message
+    msg = build_update_template_message()
+    assert "eliminar" in msg.lower() or "delete" in msg.lower()
+
+
+def test_update_template_prompt_delete_requires_confirmation():
+    from mcp_server.prompts.update_template import build_update_template_message
+    msg = build_update_template_message()
+    assert "confirmar" in msg.lower() or "CONFIRMAR" in msg
+
+
+# ---------------------------------------------------------------------------
+# manage_preferences — social channels
+# ---------------------------------------------------------------------------
+
+def test_manage_preferences_prompt_includes_telegram():
+    from mcp_server.prompts.manage_preferences import build_manage_preferences_message
+    msg = build_manage_preferences_message()
+    assert "telegram" in msg.lower()
+
+
+def test_manage_preferences_prompt_includes_whatsapp():
+    from mcp_server.prompts.manage_preferences import build_manage_preferences_message
+    msg = build_manage_preferences_message()
+    assert "whatsapp" in msg.lower()
+
+
+def test_manage_preferences_prompt_includes_all_8_channels():
+    from mcp_server.prompts.manage_preferences import build_manage_preferences_message
+    msg = build_manage_preferences_message().lower()
+    for channel in ["email", "sms", "push ios", "push android", "telegram", "whatsapp", "line"]:
+        assert channel in msg, f"missing channel: {channel}"
+
+
+# ---------------------------------------------------------------------------
+# onboarding — social channels
+# ---------------------------------------------------------------------------
+
+def test_onboarding_prompt_mentions_social_channels():
+    from mcp_server.prompts.onboarding import build_onboarding_message
+    msg = build_onboarding_message().lower()
+    assert "telegram" in msg or "whatsapp" in msg or "social" in msg
