@@ -89,7 +89,8 @@ async def get_notification(notification_id: str) -> dict[str, Any]:
     try:
         inp = GetNotificationInput(notification_id=UUID(notification_id))
         result = await service_api_client.request(
-            settings, "GET", f"/v1/notifications/{inp.notification_id}"
+            settings, "GET", f"/v1/notifications/{inp.notification_id}",
+            on_behalf_of_user_id=user_id,
         )
         response = NotificationView(**result).model_dump()
         log_tool_call(tool_name, user_id, start, success=True)
@@ -126,7 +127,7 @@ async def list_notifications(
 
         result = await service_api_client.request(
             settings, "GET", "/v1/notifications",
-            params=params,
+            on_behalf_of_user_id=user_id, params=params,
         )
         response = NotificationListResponse(**result).model_dump()
         log_tool_call(tool_name, user_id, start, success=True)

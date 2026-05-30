@@ -146,6 +146,22 @@ async def test_get_notification_not_found():
         await get_notification(nid)
 
 
+@respx.mock
+async def test_get_notification_sends_obo_header():
+    await _make_client()
+    nid = "00000000-0000-0000-0000-000000000004"
+    route = respx.get(f"{BASE_URL}/v1/notifications/{nid}").mock(
+        return_value=httpx.Response(200, json={
+            "id": nid, "event_id": "evt-y", "channel": "sms",
+            "status": "sent", "attempt": 1, "recipient": {"phone_number": "+1234567890"},
+        })
+    )
+    from mcp_server.tools.notifications import get_notification
+    await get_notification(nid)
+    assert route.called
+    assert route.calls[0].request.headers["X-On-Behalf-Of-User"] == str(_TEST_USER_ID)
+
+
 # ---------------------------------------------------------------------------
 # list_notifications
 # ---------------------------------------------------------------------------
@@ -189,6 +205,20 @@ async def test_list_notifications_with_cursor():
     from mcp_server.tools.notifications import list_notifications
     await list_notifications(limit=5, cursor="abc123==")
     assert route.called
+
+
+@respx.mock
+async def test_list_notifications_sends_obo_header():
+    await _make_client()
+    route = respx.get(f"{BASE_URL}/v1/notifications").mock(
+        return_value=httpx.Response(200, json={
+            "items": [], "next_cursor": "", "limit": 20,
+        })
+    )
+    from mcp_server.tools.notifications import list_notifications
+    await list_notifications()
+    assert route.called
+    assert route.calls[0].request.headers["X-On-Behalf-Of-User"] == str(_TEST_USER_ID)
 
 
 # ---------------------------------------------------------------------------
