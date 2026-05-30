@@ -109,12 +109,9 @@ async def list_templates() -> dict[str, Any]:
 async def update_template(
     template_id: str,
     name: str,
-    channel: str,
     body: str,
-    locale: str = "en",
     subject: str | None = None,
     media_urls: list[str] | None = None,
-    version: int = 1,
 ) -> dict[str, Any]:
     settings = get_settings()
     user_id = get_current_user_id_or_raise()
@@ -123,12 +120,10 @@ async def update_template(
     try:
         inp = UpdateTemplateInput(
             template_id=UUID(template_id),
-            name=name, channel=channel, locale=locale,  # type: ignore[arg-type]
-            subject=subject, body=body, media_urls=media_urls, version=version,
+            name=name, subject=subject, body=body, media_urls=media_urls,
         )
         payload: dict[str, Any] = {
-            "name": inp.name, "channel": inp.channel, "locale": inp.locale,
-            "body": inp.body, "version": inp.version,
+            "name": inp.name, "body": inp.body,
         }
         if inp.subject:
             payload["subject"] = inp.subject

@@ -259,10 +259,7 @@ async def test_update_template_success():
     result = await update_template(
         template_id=tid,
         name="Welcome v2",
-        channel="email",
         body="Hola {{nombre}}",
-        locale="es",
-        version=2,
     )
     assert route.called
     assert result["name"] == "Welcome v2"
@@ -281,7 +278,7 @@ async def test_update_template_sends_obo_header():
         })
     )
     from mcp_server.tools.templates import update_template
-    await update_template(template_id=tid, name="T", channel="sms", body="Hi")
+    await update_template(template_id=tid, name="T", body="Hi")
     assert route.called
     assert route.calls[0].request.headers["X-On-Behalf-Of-User"] == str(_TEST_USER_ID)
 
@@ -299,7 +296,7 @@ async def test_update_template_sends_subject_when_provided():
     from mcp_server.tools.templates import update_template
     import json as _json
     await update_template(
-        template_id=tid, name="T", channel="email", body="Hi", subject="Hello!",
+        template_id=tid, name="T", body="Hi", subject="Hello!",
     )
     sent_body = _json.loads(route.calls[0].request.content)
     assert sent_body["subject"] == "Hello!"

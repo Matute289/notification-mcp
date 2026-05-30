@@ -1,6 +1,7 @@
 """Pydantic v2 models for tool inputs and API responses."""
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Annotated, Literal
 from uuid import UUID
 
@@ -8,7 +9,10 @@ from pydantic import BaseModel, ConfigDict, Field
 
 _STRICT = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
-Channel = Literal["email", "sms", "push_ios", "push_android"]
+Channel = Literal[
+    "email", "sms", "push_ios", "push_android",
+    "telegram", "whatsapp", "line", "facebook_messenger",
+]
 PushChannel = Literal["push_ios", "push_android"]
 NotificationStatus = Literal[
     "received", "enqueued", "in_flight", "sent", "retrying", "dead_letter", "failed"
@@ -24,6 +28,7 @@ class RecipientInput(BaseModel):
     email: str | None = Field(None, max_length=320)
     phone_number: str | None = Field(None, max_length=20)
     device_token: str | None = Field(None, max_length=512)
+    messaging_id: str | None = Field(None, max_length=512)
 
 
 class SubmitNotificationInput(BaseModel):
@@ -54,15 +59,14 @@ class CreateTemplateInput(BaseModel):
 
 
 class UpdateTemplateInput(BaseModel):
+    """Input for PUT /v1/templates/{id}. Channel, locale and version are
+    immutable after creation — only name, subject, body and media_urls can change."""
     model_config = _STRICT
     template_id: UUID
     name: Annotated[str, Field(min_length=1, max_length=128)]
-    channel: Channel
-    locale: Annotated[str, Field(min_length=2, max_length=10)] = "en"
     subject: str | None = Field(None, max_length=998)
     body: Annotated[str, Field(min_length=1, max_length=160_000)]
     media_urls: Annotated[list[str], Field(max_length=10)] | None = None
-    version: Annotated[int, Field(ge=1, le=9999)] = 1
 
 
 class GetTemplateInput(BaseModel):
@@ -91,6 +95,7 @@ class RecipientView(BaseModel):
     email: str | None = None
     phone_number: str | None = None
     device_token: str | None = None
+    messaging_id: str | None = None
 
 
 class NotificationView(BaseModel):
@@ -105,6 +110,8 @@ class NotificationView(BaseModel):
     recipient: RecipientView
     variables: dict[str, str] | None = None
     template_id: UUID | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
 
 
 class SubmitResponse(BaseModel):
@@ -123,3 +130,17 @@ class TemplateView(BaseModel):
     media_urls: list[str] | None = None
     version: int
     owner_user_id: int | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class SettingView(BaseModel):
+    channel: str
+    opt_in: bool
+    updated_at: datetime | None = None
+
+
+class NotificationListResponse(BaseModel):
+    items: list[NotificationView]
+    next_cursor: str
+    limit: int
