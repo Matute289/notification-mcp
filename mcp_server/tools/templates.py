@@ -13,17 +13,21 @@ from ._logging import log_tool_call
 _template_cache: dict[str, tuple[float, dict[str, Any]]] = {}
 
 
-def _cache_get(template_id: str, ttl_s: int) -> dict[str, Any] | None:
+def _cache_key(user_id: int, template_id: str) -> str:
+    return f"{user_id}:{template_id}"
+
+
+def _cache_get(key: str, ttl_s: int) -> dict[str, Any] | None:
     if ttl_s <= 0:
         return None
-    entry = _template_cache.get(template_id)
+    entry = _template_cache.get(key)
     if entry and (time.monotonic() - entry[0]) < ttl_s:
         return entry[1]
     return None
 
 
-def _cache_set(template_id: str, data: dict[str, Any]) -> None:
-    _template_cache[template_id] = (time.monotonic(), data)
+def _cache_set(key: str, data: dict[str, Any]) -> None:
+    _template_cache[key] = (time.monotonic(), data)
 
 
 async def create_template(
@@ -73,13 +77,14 @@ async def get_template(template_id: str) -> dict[str, Any]:
     try:
         inp = GetTemplateInput(template_id=UUID(template_id))
         tid = str(inp.template_id)
-        cached = _cache_get(tid, settings.template_cache_ttl_s)
+        ckey = _cache_key(user_id, tid)
+        cached = _cache_get(ckey, settings.template_cache_ttl_s)
         if cached is not None:
             log_tool_call(tool_name, user_id, start, success=True)
             return cached
         result = await service_api_client.request(settings, "GET", f"/v1/templates/{tid}", on_behalf_of_user_id=user_id)
         view = TemplateView(**result).model_dump()
-        _cache_set(tid, view)
+        _cache_set(ckey, view)
         log_tool_call(tool_name, user_id, start, success=True)
         return view
     except Exception as exc:
@@ -135,6 +140,7 @@ async def update_template(
             on_behalf_of_user_id=user_id, json_body=payload,
         )
         response = TemplateView(**result).model_dump()
+        _template_cache.pop(_cache_key(user_id, str(inp.template_id)), None)  # invalidate stale cache
         log_tool_call(tool_name, user_id, start, success=True)
         return response
     except Exception as exc:
@@ -153,6 +159,7 @@ async def delete_template(template_id: str) -> dict[str, Any]:
             settings, "DELETE", f"/v1/templates/{inp.template_id}",
             on_behalf_of_user_id=user_id,
         )
+        _template_cache.pop(_cache_key(user_id, str(inp.template_id)), None)  # invalidate deleted entry
         log_tool_call(tool_name, user_id, start, success=True)
         return {"success": True}
     except Exception as exc:
