@@ -65,7 +65,7 @@ class Settings(BaseSettings):
     def __repr__(self) -> str:
         return (
             f"Settings(service_api_url={self.service_api_url!r}, "
-            f"service_api_key={self.service_api_key!r}, "
+            f"service_api_key={self.service_api_key[:8]}..., "
             f"service_api_secret=***, secret_key=***)"
         )
 
