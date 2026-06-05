@@ -1,0 +1,40 @@
+services:
+  mcp-postgres:
+    image: postgres:16-alpine
+    container_name: mcp-postgres
+    environment:
+      POSTGRES_USER: ${MCP_POSTGRES_USER}
+      POSTGRES_PASSWORD: ${MCP_POSTGRES_PASSWORD}
+      POSTGRES_DB: ${MCP_POSTGRES_DB}
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - /opt/notification-mcp/data/postgres:/var/lib/postgresql/data
+    mem_limit: 64m
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${MCP_POSTGRES_USER}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  mcp-server:
+    image: notification-mcp:latest
+    container_name: mcp-server
+    network_mode: host
+    environment:
+      DATABASE_URL: postgresql://${MCP_POSTGRES_USER}:${MCP_POSTGRES_PASSWORD}@127.0.0.1:5433/${MCP_POSTGRES_DB}
+      SERVICE_API_URL: http://127.0.0.1:8001
+      SERVICE_API_KEY: ${SERVICE_API_KEY}
+      SERVICE_API_SECRET: ${SERVICE_API_SECRET}
+      SECRET_KEY: ${SECRET_KEY}
+      MCP_HOST: 127.0.0.1
+      MCP_PORT: 8002
+      MCP_TRANSPORT: streamable_http
+      LOG_LEVEL: INFO
+      LOG_FORMAT: json
+    depends_on:
+      mcp-postgres:
+        condition: service_healthy
+    mem_limit: 64m
+    restart: unless-stopped
