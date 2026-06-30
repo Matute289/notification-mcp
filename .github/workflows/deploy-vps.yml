@@ -34,7 +34,7 @@ jobs:
           source: notification-mcp.tar.gz
           target: /tmp/
 
-      - name: Load image and restart on VPS
+      - name: Load image on VPS (service is paused, no auto-start)
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.VPS_HOST }}
@@ -43,6 +43,3 @@ jobs:
           script: |
             docker load < /tmp/notification-mcp.tar.gz
             rm /tmp/notification-mcp.tar.gz
-            cd /opt/notification-mcp
-            docker compose -f docker-compose.vps.yml --env-file .env.vps up -d --force-recreate mcp-server
-            docker compose -f docker-compose.vps.yml --env-file .env.vps ps
